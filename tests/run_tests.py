@@ -27,6 +27,7 @@ POSITIVE_TESTS = (
     ROOT / "tests" / "host" / "planner.cpp",
     ROOT / "tests" / "host" / "runtime.cpp",
     ROOT / "tests" / "host" / "layout.cpp",
+    ROOT / "tests" / "host" / "concurrency.cpp",
 )
 COMPILE_FAIL_TESTS = tuple(sorted((ROOT / "tests" / "compile_fail").glob("*.cpp")))
 PUBLIC_HEADERS = tuple(sorted((ROOT / "src" / "event").glob("*.hpp"))) + (ROOT / "src" / "ESPressio_Event.hpp",)

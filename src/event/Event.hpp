@@ -9,3 +9,4 @@
 #include "MemoryPlan.hpp"
 #include "Runtime.hpp"
 #include "Integration.hpp"
+#include "Bootstrap.hpp"

@@ -123,7 +123,7 @@ namespace ESPressio::Event {
         using BorrowBase = Detail::BorrowStorage<ListenerCount>;
 
         TEvent _event;
-        ListenerSet _pending{};
+        [[no_unique_address]] ListenerSet _pending{};
 
     public:
         template<class TEventArgument>

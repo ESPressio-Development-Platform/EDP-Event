@@ -44,7 +44,7 @@ namespace ESPressio::Event {
         template<class TPlan, class TEvent>
         struct TypeState final {
             using Record = OccurrenceRecord<TPlan, TEvent>;
-            typename Record::ListenerSet Subscriptions{};
+            [[no_unique_address]] typename Record::ListenerSet Subscriptions{};
             AdmissionState<TPlan, TEvent> Admission{};
         };
 
@@ -121,6 +121,7 @@ namespace ESPressio::Event {
     /// Bounded runtime realizing one normalized Event family plan over application-owned dependencies.
     template<
         class TPlan,
+        class TArchitecture,
         class TMemoryRuntime,
         class TThreadingRuntime,
         class TMutexProvider,
@@ -134,16 +135,24 @@ namespace ESPressio::Event {
         using TypeStates = typename Detail::TypeStateTuple<TPlan, PrimitiveTypes>::Type;
         using ListenerCursors = typename Detail::ListenerCursorTuple<TPlan, Listeners>::Type;
 
-        static_assert(sizeof...(TCallbackProviders) == Observations::Count,
-            "Event Runtime requires one callback provider binding per Observe declaration");
+        using RequiredCallbackProviders = typename Detail::RequiredCallbackProviders<
+            TArchitecture,
+            Observations
+        >::Type;
+        using BoundCallbackProviders = Primitives::TypeList<TCallbackProviders...>;
+
+        static_assert(
+            std::is_same_v<RequiredCallbackProviders, BoundCallbackProviders>,
+            "Event Runtime callback provider bindings must exactly match the unique providers resolved by Architecture"
+        );
 
         TMemoryRuntime* _memory;
         TThreadingRuntime* _threading;
         TMutexProvider* _mutex;
         std::tuple<TCallbackProviders*...> _callbacks;
         TypeStates _types{};
-        ListenerCursors _listenerCursors{};
-        Detail::SharedPendingCounter<TPlan::SharedPendingCapacity> _sharedPending{};
+        [[no_unique_address]] ListenerCursors _listenerCursors{};
+        [[no_unique_address]] Detail::SharedPendingCounter<TPlan::SharedPendingCapacity> _sharedPending{};
         bool _initialized{false};
 
         [[noreturn]] static void InfrastructureFailure() noexcept {
@@ -454,8 +463,12 @@ namespace ESPressio::Event {
             const TEvent* borrowed = &record.Value();
             Unlock();
 
-            constexpr std::size_t observation = TPlan::template ObservationOrdinal<TThread, TEvent>;
-            auto* callback = std::get<observation>(_callbacks);
+            using CallbackProvider = Composition::ListenerCallbackProvider<
+                TThread,
+                TEvent,
+                TArchitecture
+            >;
+            auto* callback = std::get<CallbackProvider*>(_callbacks);
             static_assert(
                 requires(decltype(*callback)& provider, const TEvent& value) {
                     { provider.OnEvent(value) } noexcept -> std::same_as<void>;
@@ -654,7 +667,11 @@ namespace ESPressio::Event {
 
         template<class TEventArgument, class TRetention = UntilHandoff>
         requires EventType<std::remove_cvref_t<TEventArgument>> && RetentionRequest<TRetention> &&
-            TPlan::template IsDeployed<std::remove_cvref_t<TEventArgument>>
+            TPlan::template IsDeployed<std::remove_cvref_t<TEventArgument>> &&
+            (
+                TPlan::template SupportsTimedRetention<std::remove_cvref_t<TEventArgument>> ||
+                std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>
+            )
         [[nodiscard]] DispatchResult Dispatch(
             LocalOnly,
             TEventArgument&& event,
@@ -677,7 +694,11 @@ namespace ESPressio::Event {
         }
 
         template<class TEvent, class TRetention = UntilHandoff, class TRemoteOperation>
-        requires EventType<TEvent> && RetentionRequest<TRetention> && TPlan::template IsDeployed<TEvent>
+        requires EventType<TEvent> && RetentionRequest<TRetention> && TPlan::template IsDeployed<TEvent> &&
+            (
+                TPlan::template SupportsTimedRetention<TEvent> ||
+                std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>
+            )
         [[nodiscard]] auto Dispatch(
             LocalAndRemote,
             const TEvent& event,
@@ -719,7 +740,11 @@ namespace ESPressio::Event {
 
         template<class TEventArgument, class TRetention = UntilHandoff>
         requires EventType<std::remove_cvref_t<TEventArgument>> && RetentionRequest<TRetention> &&
-            TPlan::template IsDeployed<std::remove_cvref_t<TEventArgument>>
+            TPlan::template IsDeployed<std::remove_cvref_t<TEventArgument>> &&
+            (
+                TPlan::template SupportsTimedRetention<std::remove_cvref_t<TEventArgument>> ||
+                std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>
+            )
         [[nodiscard]] DispatchResult Dispatch(
             TEventArgument&& event,
             TRetention retention = {}
@@ -733,7 +758,11 @@ namespace ESPressio::Event {
 
         template<class TEventArgument, class TRetention = UntilHandoff>
         requires EventType<std::remove_cvref_t<TEventArgument>> && RetentionRequest<TRetention> &&
-            TPlan::template IsDeployed<std::remove_cvref_t<TEventArgument>>
+            TPlan::template IsDeployed<std::remove_cvref_t<TEventArgument>> &&
+            (
+                TPlan::template SupportsTimedRetention<std::remove_cvref_t<TEventArgument>> ||
+                std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>
+            )
         [[nodiscard]] DispatchResult Ingress(
             TEventArgument&& event,
             TRetention retention = {}

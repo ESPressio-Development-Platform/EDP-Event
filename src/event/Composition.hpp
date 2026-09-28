@@ -46,4 +46,16 @@ namespace ESPressio::Event::Composition {
         Framework::SelectUnique
     >;
 
+    using ThreadingTopologyRequirement = Framework::Requirement<
+        Threading::DedicatedThreadExecution,
+        Framework::RequirementScope::ExternalDomain,
+        Framework::ExactlyProviders<1U>
+    >;
+
+    template<class TArchitecture>
+    using ThreadingTopologyProvider = typename TArchitecture::template Select<
+        ThreadingTopologyRequirement,
+        Framework::SelectUnique
+    >;
+
 } // ESPressio::Event::Composition

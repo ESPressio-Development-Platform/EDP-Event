@@ -7,6 +7,7 @@
 #include <ESPressio_System.hpp>
 
 #include "Deployment.hpp"
+#include "Composition.hpp"
 
 namespace ESPressio::Event {
 
@@ -57,6 +58,27 @@ namespace ESPressio::Event {
                 typename Primitives::Detail::ConcatTypeLists<Primitives::TypeList<First>, Tail>::Type,
                 Tail
             >;
+        };
+
+
+        template<class TArchitecture, class TObservation>
+        struct CallbackProviderForObservation;
+
+        template<class TArchitecture, class TThread, class TEvent>
+        struct CallbackProviderForObservation<TArchitecture, Observe<TThread, TEvent>> {
+            using Type = Composition::ListenerCallbackProvider<TThread, TEvent, TArchitecture>;
+        };
+
+        template<class TArchitecture, class TObservations>
+        struct RequiredCallbackProviders;
+
+        template<class TArchitecture, class... TObservations>
+        struct RequiredCallbackProviders<TArchitecture, Primitives::TypeList<TObservations...>> {
+            using Type = typename Primitives::Detail::UniqueTypeList<
+                Primitives::TypeList<
+                    typename CallbackProviderForObservation<TArchitecture, TObservations>::Type...
+                >
+            >::Type;
         };
 
         template<class TList> struct DeployEvents;
@@ -205,11 +227,19 @@ namespace ESPressio::Event {
             using Listeners = typename Primitives::Detail::UniqueTypeList<ListenerDeclarations>::Type;
 
             static_assert(!HasDuplicateEventDeployments<Deployments>::Value, "Event family may deploy each Event Type at most once");
+            static_assert(
+                Primitives::Detail::UniquePrimitiveIdentifiers<PrimitiveTypes>::value,
+                "Event family deployed Event Types must have distinct universal TypeIdentifier values"
+            );
             static_assert(!Primitives::Detail::HasDuplicateTypes<Observations>::Value, "Event family may declare each (Listener, Event) observation at most once");
             static_assert(SharedDeclarations::Count <= 1U, "Event family may declare SharedPending at most once");
             static_assert(ValidateObservedDeployed<Observations>::template Against<PrimitiveTypes>(), "Observe requires the Event Type to be locally deployed");
 
             static constexpr std::size_t SharedPendingCapacity = SharedPendingValue<SharedDeclarations>::value;
+            static_assert(
+                SharedDeclarations::Count == 0U || SharedPendingCapacity > 0U,
+                "SharedPending<0> is redundant; omit the family-wide declaration when no shared entitlement is required"
+            );
             static constexpr std::size_t MaximumUsefulSharedPending = MaximumUsefulShared<Deployments>::value;
             static_assert(SharedPendingCapacity <= MaximumUsefulSharedPending, "SharedPending exceeds the maximum useful Queue overflow entitlement");
 

@@ -14,6 +14,7 @@ namespace Test {
     namespace Memory = ESPressio::Memory;
     namespace Threading = ESPressio::Threading;
     namespace Clock = ESPressio::Clock;
+    namespace CF = ESPressio::System::CompositionFramework;
 
     struct ListenerA {};
     struct ListenerB {};
@@ -155,7 +156,12 @@ namespace Test {
         FakeThread<TThread> ThreadHandle() noexcept { return {}; }
     };
 
-    struct FakeMutex final {
+    struct FakeMutex final : CF::Provider<
+        Threading::Domain,
+        CF::Offers<
+            CF::Offer<Threading::OrdinaryMutex<Event::Composition::RuntimeMutexIdentity>>
+        >
+    > {
         bool Held{false};
         Threading::OrdinaryMutexAcquireResult Acquire() noexcept {
             if (Held) return Threading::OrdinaryMutexAcquireResult::ProviderFailure;
@@ -169,39 +175,74 @@ namespace Test {
         }
     };
 
-    struct QueueAHandler final {
-        using Hook = void (*)(void*, const QueueEvent&) noexcept;
-        int Sum{0};
-        void* Context{nullptr};
-        Hook After{nullptr};
+    struct ListenerAHandler final : CF::Provider<
+        Event::Composition::Domain,
+        CF::Offers<
+            CF::Offer<Event::Composition::ListenerCallback<ListenerA, QueueEvent>>,
+            CF::Offer<Event::Composition::ListenerCallback<ListenerA, LatestEvent>>
+        >
+    > {
+        using QueueHook = void (*)(void*, const QueueEvent&) noexcept;
+        using LatestHook = void (*)(void*, const LatestEvent&) noexcept;
+
+        int QueueSum{0};
+        int LatestLast{0};
+        void* QueueContext{nullptr};
+        QueueHook QueueAfter{nullptr};
+        void* LatestContext{nullptr};
+        LatestHook LatestAfter{nullptr};
+
         void OnEvent(const QueueEvent& event) noexcept {
-            Sum += event.Value;
-            if (After != nullptr) After(Context, event);
+            QueueSum += event.Value;
+            if (QueueAfter != nullptr) QueueAfter(QueueContext, event);
         }
-    };
-    struct QueueBHandler final {
-        int Sum{0};
-        void OnEvent(const QueueEvent& event) noexcept { Sum += event.Value * 10; }
-    };
-    struct LatestAHandler final {
-        using Hook = void (*)(void*, const LatestEvent&) noexcept;
-        int Last{0};
-        void* Context{nullptr};
-        Hook After{nullptr};
+
         void OnEvent(const LatestEvent& event) noexcept {
-            Last = event.Value;
-            if (After != nullptr) After(Context, event);
+            LatestLast = event.Value;
+            if (LatestAfter != nullptr) LatestAfter(LatestContext, event);
         }
     };
 
+    struct QueueBHandler final : CF::Provider<
+        Event::Composition::Domain,
+        CF::Offers<
+            CF::Offer<Event::Composition::ListenerCallback<ListenerB, QueueEvent>>
+        >
+    > {
+        int Sum{0};
+        void OnEvent(const QueueEvent& event) noexcept { Sum += event.Value * 10; }
+    };
+
+    using ListenerThreadingTopology = Threading::ThreadingTopology<
+        Threading::DedicatedThread<ListenerA>,
+        Threading::DedicatedThread<ListenerB>
+    >;
+    using EventComposition = CF::Composition<
+        Event::Composition::Domain,
+        ListenerAHandler,
+        QueueBHandler
+    >;
+    using ThreadingComposition = CF::Composition<
+        Threading::Domain,
+        ListenerThreadingTopology,
+        FakeMutex
+    >;
+    using Architecture = CF::Architecture<EventComposition, ThreadingComposition>;
+
     using Runtime = Event::Runtime<
         Plan,
+        Architecture,
         FakeMemoryRuntime,
         FakeThreadingRuntime,
         FakeMutex,
-        QueueAHandler,
-        QueueBHandler,
-        LatestAHandler
+        ListenerAHandler,
+        QueueBHandler
+    >;
+    using Bootstrap = Event::Bootstrap<
+        Architecture,
+        Plan,
+        FakeMemoryRuntime,
+        FakeThreadingRuntime
     >;
 
     void ReentrantQueueDispatch(void* context, const QueueEvent& event) noexcept {
@@ -236,12 +277,11 @@ int main() {
     FakeMemoryRuntime memory;
     FakeThreadingRuntime threading;
     FakeMutex mutex;
-    QueueAHandler queueA;
+    ListenerAHandler listenerA;
     QueueBHandler queueB;
-    LatestAHandler latestA;
-    Runtime runtime(memory, threading, mutex, queueA, queueB, latestA);
-
-    assert(runtime.Initialize() == Event::InitializationResult::Initialized);
+    Bootstrap bootstrap(memory, threading, mutex, listenerA, queueB);
+    assert(bootstrap.Initialize() == Event::InitializationResult::Initialized);
+    auto& runtime = bootstrap.RuntimeInstance();
     assert((runtime.template Subscribe<ListenerA, QueueEvent>() == Event::SubscribeResult::Subscribed));
     assert((runtime.template Subscribe<ListenerB, QueueEvent>() == Event::SubscribeResult::Subscribed));
     assert((runtime.template Subscribe<ListenerA, LatestEvent>() == Event::SubscribeResult::Subscribed));
@@ -254,7 +294,7 @@ int main() {
     auto drainedA = runtime.template Drain<ListenerA>(2U);
     assert(drainedA.Delivered == 2U);
     assert(drainedA.WorkRemaining);
-    assert(queueA.Sum == 3);
+    assert(listenerA.QueueSum == 3);
 
     auto drainedB = runtime.template Drain<ListenerB>(8U);
     assert(drainedB.Delivered == 3U);
@@ -264,13 +304,13 @@ int main() {
     drainedA = runtime.template Drain<ListenerA>(8U);
     assert(drainedA.Delivered == 1U);
     assert(!drainedA.WorkRemaining);
-    assert(queueA.Sum == 6);
+    assert(listenerA.QueueSum == 6);
 
     assert(runtime.Dispatch(LatestEvent{10}) == Event::DispatchResult::Accepted);
     assert(runtime.Dispatch(LatestEvent{20}) == Event::DispatchResult::Accepted);
     const auto latestDrain = runtime.template Drain<ListenerA>(8U);
     assert(latestDrain.Delivered == 1U);
-    assert(latestA.Last == 20);
+    assert(listenerA.LatestLast == 20);
 
     clock.NowNs = 1000U;
     assert(runtime.Dispatch(QueueEvent{9}, Event::UntilDeadline{Clock::MonotonicTimestamp::FromNanoseconds(999U)}) == Event::DispatchResult::Expired);
@@ -294,27 +334,27 @@ int main() {
     assert((runtime.template Subscribe<ListenerA, QueueEvent>() == Event::SubscribeResult::Subscribed));
 
     // Callback execution is outside the Event lock: reentrant Dispatch must succeed.
-    queueA.Context = &runtime;
-    queueA.After = &ReentrantQueueDispatch;
+    listenerA.QueueContext = &runtime;
+    listenerA.QueueAfter = &ReentrantQueueDispatch;
     assert(runtime.Dispatch(QueueEvent{50}) == Event::DispatchResult::Accepted);
     const auto reentrantQueue = runtime.template Drain<ListenerA>(1U);
     assert(reentrantQueue.Delivered == 1U);
     assert(reentrantQueue.WorkRemaining);
-    queueA.After = nullptr;
+    listenerA.QueueAfter = nullptr;
     const auto reentrantQueueTail = runtime.template Drain<ListenerA>(8U);
     assert(reentrantQueueTail.Delivered == 1U);
 
     // NewestOnly may admit a replacement while the previous occurrence remains actively borrowed.
-    latestA.Context = &runtime;
-    latestA.After = &ReentrantLatestDispatch;
+    listenerA.LatestContext = &runtime;
+    listenerA.LatestAfter = &ReentrantLatestDispatch;
     assert(runtime.Dispatch(LatestEvent{30}) == Event::DispatchResult::Accepted);
     const auto latestBorrowed = runtime.template Drain<ListenerA>(1U);
     assert(latestBorrowed.Delivered == 1U);
     assert(latestBorrowed.WorkRemaining);
-    latestA.After = nullptr;
+    listenerA.LatestAfter = nullptr;
     const auto latestReplacement = runtime.template Drain<ListenerA>(1U);
     assert(latestReplacement.Delivered == 1U);
-    assert(latestA.Last == 40);
+    assert(listenerA.LatestLast == 40);
 
     // Common expiry gate prevents both local admission and remote handoff.
     RemoteOperation remote;

@@ -9,143 +9,326 @@
 
 namespace ESPressio::Event {
 
+    /// Canonical Event duration Type owned by EDP-Clock.
     using Duration = Clock::Duration;
+
+    /// Canonical Event monotonic timestamp Type owned by EDP-Clock.
     using MonotonicTimestamp = Clock::MonotonicTimestamp;
 
+
+    /// Result of one local Event admission attempt.
     enum class DispatchResult : std::uint8_t {
+        /// Admission committed successfully.
         Accepted = 0U,
+
+        /// Required bounded physical or pending capacity was unavailable.
         NoCapacity = 1U,
+
+        /// The common retention precondition was already expired.
         Expired = 2U
     };
 
+
+    /// Result of activating one statically planned Listener/Event relationship.
     enum class SubscribeResult : std::uint8_t {
+        /// The previously inactive relationship became subscribed.
         Subscribed = 0U,
+
+        /// The relationship was already subscribed and remained unchanged.
         AlreadySubscribed = 1U
     };
 
+
+    /// Result of deactivating one statically planned Listener/Event relationship.
     enum class UnsubscribeResult : std::uint8_t {
+        /// The previously active relationship became unsubscribed.
         Unsubscribed = 0U,
+
+        /// The relationship was already unsubscribed and remained unchanged.
         NotSubscribed = 1U
     };
 
+
+    /// Result of initializing one Event Runtime.
     enum class InitializationResult : std::uint8_t {
+        /// Event Runtime initialization completed successfully.
         Initialized = 0U,
+
+        /// The Event Runtime had already been initialized.
         AlreadyInitialized = 1U,
+
+        /// A required owning-domain provider was not ready or available.
         ProviderFailure = 2U
     };
 
+
+    /// Selects local Event admission only.
     struct LocalOnly final {};
+
+
+    /// Selects an external remote Event handoff only.
     struct RemoteOnly final {};
+
+
+    /// Selects independent local admission and external remote Event handoff.
     struct LocalAndRemote final {};
 
+
+    /// Identifies one supported Event execution-domain scope tag.
+    /// @tparam TScope Candidate execution-domain scope Type.
     template<class TScope>
     concept ExecutionDomainScope =
         std::is_same_v<std::remove_cvref_t<TScope>, LocalOnly> ||
         std::is_same_v<std::remove_cvref_t<TScope>, RemoteOnly> ||
         std::is_same_v<std::remove_cvref_t<TScope>, LocalAndRemote>;
 
+
+    /// Requests retention until every pending local handoff has occurred or been cancelled.
     struct UntilHandoff final {};
 
+
+    /// Requests retention for one duration measured from Dispatch normalization time.
     struct ForDuration final {
+
+        /// Requested retention duration in canonical Clock units.
         Duration Value;
+
     };
 
+
+    /// Requests retention until one absolute canonical monotonic deadline.
     struct UntilDeadline final {
+
+        /// Requested absolute canonical monotonic deadline.
         MonotonicTimestamp Value;
+
     };
 
+
+    /// Identifies one supported per-Dispatch retention request Type.
+    /// @tparam TRetention Candidate retention request Type.
     template<class TRetention>
     concept RetentionRequest =
         std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff> ||
         std::is_same_v<std::remove_cvref_t<TRetention>, ForDuration> ||
         std::is_same_v<std::remove_cvref_t<TRetention>, UntilDeadline>;
 
+
+    /// Event-owned wrapper describing whether an external remote operation was attempted.
+    /// @tparam TRemoteResult Provider-defined non-void result Type returned by the remote operation.
     template<class TRemoteResult>
     class RemoteDispatchAttempt final {
-    public:
-        enum class State : std::uint8_t {
-            SkippedExpired = 0U,
-            Attempted = 1U
-        };
 
-    private:
-        State _state{State::SkippedExpired};
-        union Storage {
-            char Empty;
-            TRemoteResult Result;
+        public:
 
-            constexpr Storage() noexcept : Empty{} {}
-            ~Storage() noexcept {}
-        } _storage{};
+            /// Observable Event-level state of the remote attempt.
+            enum class State : std::uint8_t {
+                /// The common expiry gate prevented the remote operation from being called.
+                SkippedExpired = 0U,
 
-    public:
-        static_assert(!std::is_void_v<TRemoteResult>, "Remote Dispatch result must be observable");
-        static_assert(std::is_nothrow_move_constructible_v<TRemoteResult>, "Remote Dispatch result must be nothrow move constructible");
-        static_assert(std::is_nothrow_destructible_v<TRemoteResult>, "Remote Dispatch result must be nothrow destructible");
+                /// The remote operation was called exactly once and produced a native result.
+                Attempted = 1U
+            };
 
-        RemoteDispatchAttempt() noexcept = default;
+        private:
 
-        explicit RemoteDispatchAttempt(TRemoteResult result) noexcept :
-            _state(State::Attempted) {
-            ::new (static_cast<void*>(&_storage.Result)) TRemoteResult(std::move(result));
-        }
+            // Remote attempt state.
 
-        RemoteDispatchAttempt(const RemoteDispatchAttempt&) = delete;
-        RemoteDispatchAttempt& operator=(const RemoteDispatchAttempt&) = delete;
+            /// Authoritative presence/state indicator for the union-stored remote result.
+            State _state{State::SkippedExpired};
 
-        RemoteDispatchAttempt(RemoteDispatchAttempt&& other) noexcept :
-            _state(other._state) {
-            if (_state == State::Attempted) {
-                ::new (static_cast<void*>(&_storage.Result)) TRemoteResult(std::move(other._storage.Result));
-                other._storage.Result.~TRemoteResult();
-                other._state = State::SkippedExpired;
+            /// Manual storage allowing the provider-defined result to be absent when expiry skips the operation.
+            union Storage {
+                /// Inactive storage byte used while no remote result exists.
+                char Empty;
+
+                /// Provider-defined result present only while state is Attempted.
+                TRemoteResult Result;
+
+                /// Creates inactive storage without constructing a remote result.
+                constexpr Storage() noexcept : Empty{} {
+                }
+
+                /// Leaves active-member destruction to RemoteDispatchAttempt.
+                ~Storage() noexcept {
+                }
+            } _storage{};
+
+        public:
+
+            static_assert(
+                !std::is_void_v<TRemoteResult>,
+                "Remote Dispatch result must be observable"
+            );
+
+            static_assert(
+                std::is_nothrow_move_constructible_v<TRemoteResult>,
+                "Remote Dispatch result must be nothrow move constructible"
+            );
+
+            static_assert(
+                std::is_nothrow_destructible_v<TRemoteResult>,
+                "Remote Dispatch result must be nothrow destructible"
+            );
+
+            // Construction and ownership.
+
+            /// Creates a remote attempt which was skipped because expiry prevented invocation.
+            RemoteDispatchAttempt() noexcept = default;
+
+            /// Creates an attempted remote result by moving the provider-defined result into owned storage.
+            /// @param result Provider-defined result produced by the remote operation.
+            explicit RemoteDispatchAttempt(
+                TRemoteResult result
+            ) noexcept :
+                _state(State::Attempted) {
+                ::new (static_cast<void*>(&_storage.Result)) TRemoteResult(
+                    std::move(result)
+                );
             }
-        }
 
-        RemoteDispatchAttempt& operator=(RemoteDispatchAttempt&&) = delete;
+            /// Remote attempt wrappers cannot be copied because their provider result may own exclusive state.
+            RemoteDispatchAttempt(const RemoteDispatchAttempt&) = delete;
 
-        ~RemoteDispatchAttempt() noexcept {
-            if (_state == State::Attempted) {
-                _storage.Result.~TRemoteResult();
+            /// Remote attempt wrappers cannot be copy-assigned because their provider result may own exclusive state.
+            RemoteDispatchAttempt& operator=(const RemoteDispatchAttempt&) = delete;
+
+            /// Moves the optional provider result and leaves the source in SkippedExpired state.
+            /// @param other Source wrapper whose owned result, if present, is transferred.
+            RemoteDispatchAttempt(
+                RemoteDispatchAttempt&& other
+            ) noexcept :
+                _state(other._state) {
+                if (_state == State::Attempted) {
+                    ::new (static_cast<void*>(&_storage.Result)) TRemoteResult(
+                        std::move(other._storage.Result)
+                    );
+                    other._storage.Result.~TRemoteResult();
+                    other._state = State::SkippedExpired;
+                }
             }
-        }
 
-        [[nodiscard]] State GetState() const noexcept { return _state; }
-        [[nodiscard]] bool WasAttempted() const noexcept { return _state == State::Attempted; }
-        [[nodiscard]] bool WasSkippedExpired() const noexcept { return _state == State::SkippedExpired; }
+            /// Move assignment is deliberately unavailable so active union state cannot be overwritten ambiguously.
+            RemoteDispatchAttempt& operator=(RemoteDispatchAttempt&&) = delete;
 
-        [[nodiscard]] TRemoteResult& Result() noexcept { return _storage.Result; }
-        [[nodiscard]] const TRemoteResult& Result() const noexcept { return _storage.Result; }
+            /// Destroys the provider-defined result only when an attempted result is present.
+            ~RemoteDispatchAttempt() noexcept {
+                if (_state == State::Attempted) {
+                    _storage.Result.~TRemoteResult();
+                }
+            }
+
+            // State inspection.
+
+            /// Returns the authoritative Event-level remote-attempt state.
+            [[nodiscard]] State GetState() const noexcept {
+                return _state;
+            }
+
+            /// Indicates whether the remote operation was invoked.
+            [[nodiscard]] bool WasAttempted() const noexcept {
+                return _state == State::Attempted;
+            }
+
+            /// Indicates whether expiry prevented the remote operation from being invoked.
+            [[nodiscard]] bool WasSkippedExpired() const noexcept {
+                return _state == State::SkippedExpired;
+            }
+
+            // Provider result access.
+
+            /// Returns the mutable provider-defined result; caller must first establish WasAttempted().
+            [[nodiscard]] TRemoteResult& Result() noexcept {
+                return _storage.Result;
+            }
+
+            /// Returns the immutable provider-defined result; caller must first establish WasAttempted().
+            [[nodiscard]] const TRemoteResult& Result() const noexcept {
+                return _storage.Result;
+            }
+
     };
 
+
+    /// Structurally separates independent local and remote results from LocalAndRemote Dispatch.
+    /// @tparam TLocalResult Result Type produced by local Event admission.
+    /// @tparam TRemoteResult Provider-defined result Type produced by the remote operation when attempted.
     template<class TLocalResult, class TRemoteResult>
     class LocalAndRemoteDispatchResult final {
-        TLocalResult _local;
-        RemoteDispatchAttempt<TRemoteResult> _remote;
 
-    public:
-        LocalAndRemoteDispatchResult(
-            TLocalResult local,
-            RemoteDispatchAttempt<TRemoteResult> remote
-        ) noexcept :
-            _local(std::move(local)),
-            _remote(std::move(remote)) {
-        }
+        private:
 
-        LocalAndRemoteDispatchResult(const LocalAndRemoteDispatchResult&) = delete;
-        LocalAndRemoteDispatchResult& operator=(const LocalAndRemoteDispatchResult&) = delete;
-        LocalAndRemoteDispatchResult(LocalAndRemoteDispatchResult&&) noexcept = default;
-        LocalAndRemoteDispatchResult& operator=(LocalAndRemoteDispatchResult&&) = delete;
+            // Independent domain outcomes.
 
-        [[nodiscard]] TLocalResult& Local() noexcept { return _local; }
-        [[nodiscard]] const TLocalResult& Local() const noexcept { return _local; }
-        [[nodiscard]] RemoteDispatchAttempt<TRemoteResult>& Remote() noexcept { return _remote; }
-        [[nodiscard]] const RemoteDispatchAttempt<TRemoteResult>& Remote() const noexcept { return _remote; }
+            /// Result produced by local Event admission.
+            TLocalResult _local;
+
+            /// Event-level remote attempt wrapper preserving the provider-defined result when present.
+            RemoteDispatchAttempt<TRemoteResult> _remote;
+
+        public:
+
+            // Construction and ownership.
+
+            /// Creates one combined structural result from independently produced domain outcomes.
+            /// @param local Local admission result.
+            /// @param remote Remote attempt/result wrapper.
+            LocalAndRemoteDispatchResult(
+                TLocalResult local,
+                RemoteDispatchAttempt<TRemoteResult> remote
+            ) noexcept :
+                _local(std::move(local)),
+                _remote(std::move(remote)) {
+            }
+
+            /// Combined results cannot be copied because either domain result may own exclusive state.
+            LocalAndRemoteDispatchResult(const LocalAndRemoteDispatchResult&) = delete;
+
+            /// Combined results cannot be copy-assigned because either domain result may own exclusive state.
+            LocalAndRemoteDispatchResult& operator=(const LocalAndRemoteDispatchResult&) = delete;
+
+            /// Transfers both independent domain results.
+            LocalAndRemoteDispatchResult(LocalAndRemoteDispatchResult&&) noexcept = default;
+
+            /// Move assignment is deliberately unavailable to preserve simple single-construction result ownership.
+            LocalAndRemoteDispatchResult& operator=(LocalAndRemoteDispatchResult&&) = delete;
+
+            // Domain-result access.
+
+            /// Returns the mutable local-domain result.
+            [[nodiscard]] TLocalResult& Local() noexcept {
+                return _local;
+            }
+
+            /// Returns the immutable local-domain result.
+            [[nodiscard]] const TLocalResult& Local() const noexcept {
+                return _local;
+            }
+
+            /// Returns the mutable remote-attempt wrapper.
+            [[nodiscard]] RemoteDispatchAttempt<TRemoteResult>& Remote() noexcept {
+                return _remote;
+            }
+
+            /// Returns the immutable remote-attempt wrapper.
+            [[nodiscard]] const RemoteDispatchAttempt<TRemoteResult>& Remote() const noexcept {
+                return _remote;
+            }
+
     };
 
+
+    /// Result of one bounded Listener drain operation.
     struct DrainResult final {
+
+        // Drain outcome.
+
+        /// Number of callbacks completed during this bounded drain call.
         std::size_t Delivered{0U};
+
+        /// Indicates whether this Listener still has pending Event work after the drain call.
         bool WorkRemaining{false};
+
     };
 
 } // ESPressio::Event

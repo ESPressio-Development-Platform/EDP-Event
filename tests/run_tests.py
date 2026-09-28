@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CXX = os.environ.get("CXX", "c++")
+SANITIZER_MODE = os.environ.get("EDP_EVENT_SANITIZER_MODE", "").strip().lower()
 
 DEPENDENCIES = (
     "EDP-System",
@@ -39,6 +40,11 @@ COMMON = [
     "-pthread",
     *[f"-I{path}" for path in INCLUDES],
 ]
+
+if SANITIZER_MODE:
+    if SANITIZER_MODE not in {"undefined", "address"}:
+        raise SystemExit(f"Unsupported EDP_EVENT_SANITIZER_MODE: {SANITIZER_MODE}")
+    COMMON.extend([f"-fsanitize={SANITIZER_MODE}", f"-fno-sanitize-recover={SANITIZER_MODE}"])
 
 
 def run(command: list[str], expect_success: bool) -> bool:

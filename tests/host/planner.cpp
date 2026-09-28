@@ -36,11 +36,7 @@ using Topology = ESPressio::Primitives::Topology<
     ESPressio::Event::SharedPending<2U>
 >;
 
-using FamilyPlan = typename ESPressio::Primitives::Detail::InvokeFamilyPlanner<
-    ESPressio::Event::Family,
-    typename Topology::Deployments
->::Type;
-using Plan = typename FamilyPlan::RuntimeProvider::EventPlan;
+using Plan = ESPressio::Event::PlanFor<Topology>;
 
 static_assert(Topology::PrimitiveTypes::Count == 2U);
 static_assert(Plan::Listeners::Count == 2U);

@@ -10,6 +10,9 @@ namespace ESPressio::Event {
     ///
     /// The application chooses only the Memory resource selection. Event owns the occurrence
     /// record Type, exact MaximumInstances capacity, and the no-shared-overflow policy.
+    /// @tparam TPlan Normalized Event plan defining the local deployment.
+    /// @tparam TEvent Locally deployed Event Type whose occurrence records are pooled.
+    /// @tparam TMemoryResourceSelection EDP-Memory resource placement selection for the dedicated pool.
     template<
         class TPlan,
         class TEvent,

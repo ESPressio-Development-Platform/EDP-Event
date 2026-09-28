@@ -10,13 +10,24 @@
 
 namespace ESPressio::Event::Detail {
 
-    /// Canonical retention decision used by local and scoped Dispatch paths.
+    /// Canonical retention decision shared by local and scoped Dispatch paths.
     struct NormalizedRetention final {
+
+        // Normalized retention state.
+
+        /// Absolute canonical monotonic deadline, or zero for UntilHandoff.
         MonotonicTimestamp Deadline{};
+
+        /// Indicates whether the retention request was already expired at normalization time.
         bool Expired{false};
+
     };
 
+
     /// Normalizes one Event retention request against one canonical monotonic observation.
+    /// @tparam TRetention Supported per-Dispatch retention request Type.
+    /// @param retention Requested UntilHandoff, duration, or absolute deadline policy.
+    /// @return Canonical absolute deadline and already-expired state.
     template<RetentionRequest TRetention>
     [[nodiscard]] inline NormalizedRetention NormalizeRetention(
         TRetention retention
@@ -25,6 +36,7 @@ namespace ESPressio::Event::Detail {
             return {};
         } else if constexpr (std::is_same_v<std::remove_cvref_t<TRetention>, UntilDeadline>) {
             const auto now = Clock::MonotonicNow();
+
             return NormalizedRetention{
                 retention.Value,
                 now >= retention.Value
@@ -34,7 +46,10 @@ namespace ESPressio::Event::Detail {
             const auto duration = retention.Value.Nanoseconds();
 
             if (duration <= 0) {
-                return NormalizedRetention{now, true};
+                return NormalizedRetention{
+                    now,
+                    true
+                };
             }
 
             const auto nowNanoseconds = now.Nanoseconds();

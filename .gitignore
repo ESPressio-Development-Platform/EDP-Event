@@ -427,3 +427,9 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# PlatformIO build output
+**/.pio/
+
+# Coherent-local-source temporary PlatformIO configs
+**/platformio.local.*.ini

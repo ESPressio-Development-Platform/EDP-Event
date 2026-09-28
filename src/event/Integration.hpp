@@ -12,6 +12,9 @@ namespace ESPressio::Event {
     ///
     /// Ordering between concurrent RemoteOnly calls remains a responsibility of the selected
     /// binding/Transport implementation because no local Event Runtime is required to exist.
+    /// @tparam TEvent Concrete Event payload Type presented to the remote operation.
+    /// @tparam TRetention Per-Dispatch retention request Type.
+    /// @tparam TRemoteOperation External bounded remote-domain operation Type.
     template<class TEvent, RetentionRequest TRetention, class TRemoteOperation>
     [[nodiscard]] auto DispatchScoped(
         RemoteOnly,
@@ -20,16 +23,29 @@ namespace ESPressio::Event {
         TRemoteOperation& remoteOperation
     ) noexcept {
         using RemoteResult = decltype(remoteOperation(event));
-        static_assert(noexcept(remoteOperation(event)),
-            "RemoteOnly Event handoff must be non-throwing");
-        static_assert(!std::is_void_v<RemoteResult>,
-            "RemoteOnly Event handoff requires an observable provider result");
-        static_assert(std::is_nothrow_move_constructible_v<RemoteResult>,
-            "Remote Event result must be nothrow move constructible");
-        static_assert(std::is_nothrow_destructible_v<RemoteResult>,
-            "Remote Event result must be nothrow destructible");
+
+        static_assert(
+            noexcept(remoteOperation(event)),
+            "RemoteOnly Event handoff must be non-throwing"
+        );
+
+        static_assert(
+            !std::is_void_v<RemoteResult>,
+            "RemoteOnly Event handoff requires an observable provider result"
+        );
+
+        static_assert(
+            std::is_nothrow_move_constructible_v<RemoteResult>,
+            "Remote Event result must be nothrow move constructible"
+        );
+
+        static_assert(
+            std::is_nothrow_destructible_v<RemoteResult>,
+            "Remote Event result must be nothrow destructible"
+        );
 
         const auto normalized = Detail::NormalizeRetention(retention);
+
         if (normalized.Expired) {
             return RemoteDispatchAttempt<RemoteResult>{};
         }

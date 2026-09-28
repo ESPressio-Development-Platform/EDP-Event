@@ -7,3 +7,5 @@
 #include "Planner.hpp"
 #include "Occurrence.hpp"
 #include "MemoryPlan.hpp"
+#include "Runtime.hpp"
+#include "Integration.hpp"

@@ -37,31 +37,33 @@ namespace ESPressio::Event {
         >;
 
         template<bool TTimed>
-        struct ExpiryStorage final {
+        struct ExpiryStorage {
             constexpr explicit ExpiryStorage(MonotonicTimestamp) noexcept {}
             [[nodiscard]] constexpr MonotonicTimestamp Deadline() const noexcept { return MonotonicTimestamp{}; }
+            constexpr void SetDeadline(MonotonicTimestamp) noexcept {}
         };
 
         template<>
-        struct ExpiryStorage<true> final {
+        struct ExpiryStorage<true> {
             MonotonicTimestamp ExpiresAt{};
             constexpr explicit ExpiryStorage(MonotonicTimestamp deadline) noexcept : ExpiresAt(deadline) {}
             [[nodiscard]] constexpr MonotonicTimestamp Deadline() const noexcept { return ExpiresAt; }
+            constexpr void SetDeadline(MonotonicTimestamp deadline) noexcept { ExpiresAt = deadline; }
         };
 
         template<class TIndex, bool TQueued>
-        struct QueueLinkStorage final {
+        struct QueueLinkStorage {
             constexpr QueueLinkStorage() noexcept = default;
         };
 
         template<class TIndex>
-        struct QueueLinkStorage<TIndex, true> final {
+        struct QueueLinkStorage<TIndex, true> {
             TIndex Next = TIndex::Invalid();
             constexpr QueueLinkStorage() noexcept = default;
         };
 
         template<std::size_t TListeners, bool THasListeners = (TListeners > 0U)>
-        struct BorrowStorage final {
+        struct BorrowStorage {
             constexpr BorrowStorage() noexcept = default;
             [[nodiscard]] constexpr std::size_t Count() const noexcept { return 0U; }
             constexpr void Increment() noexcept {}
@@ -69,7 +71,7 @@ namespace ESPressio::Event {
         };
 
         template<std::size_t TListeners>
-        struct BorrowStorage<TListeners, true> final {
+        struct BorrowStorage<TListeners, true> {
             using Storage = CountStorage<TListeners>;
             Storage Active{0U};
 
@@ -143,6 +145,29 @@ namespace ESPressio::Event {
         OccurrenceRecord(OccurrenceRecord&&) = delete;
         OccurrenceRecord& operator=(OccurrenceRecord&&) = delete;
         ~OccurrenceRecord() noexcept = default;
+
+
+        /// Replaces one uncommitted occurrence in-place for NewestOnly supersession.
+        /// The caller must hold Event synchronization and prove there are no active borrows.
+        template<class TEventArgument>
+        requires std::is_same_v<std::remove_cvref_t<TEventArgument>, TEvent> &&
+            std::is_nothrow_constructible_v<TEvent, TEventArgument&&>
+        void ReplaceUnborrowed(
+            TEventArgument&& event,
+            const ListenerSet& pending,
+            MonotonicTimestamp deadline
+        ) noexcept {
+            _event.~TEvent();
+            ::new (static_cast<void*>(&_event)) TEvent(
+                std::forward<TEventArgument>(event)
+            );
+            _pending = pending;
+            ExpiryBase::SetDeadline(deadline);
+
+            if constexpr (Queued) {
+                QueueBase::Next = OccurrenceIndex::Invalid();
+            }
+        }
 
         [[nodiscard]] TEvent& Value() noexcept { return _event; }
         [[nodiscard]] const TEvent& Value() const noexcept { return _event; }

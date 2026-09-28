@@ -236,6 +236,12 @@ namespace ESPressio::Event {
             template<class TThread>
             static constexpr std::size_t ListenerGlobalOrdinal = TypeOrdinal<Listeners, TThread>::value;
 
+            template<class TThread, class TEvent>
+            static constexpr std::size_t ObservationOrdinal = TypeOrdinal<
+                Observations,
+                Observe<TThread, TEvent>
+            >::value;
+
             template<class TEvent>
             static constexpr bool IsQueue = AdmissionTraits<typename Deployment<TEvent>::Admission>::IsQueue;
 
@@ -249,7 +255,7 @@ namespace ESPressio::Event {
     } // Event::Detail
 
     template<class TEventPlan>
-    class RuntimeProvider final : public System::CompositionFramework::Provider<
+    class RuntimeProvider : public System::CompositionFramework::Provider<
         Primitives::Composition::Domain,
         System::CompositionFramework::Offers<
             System::CompositionFramework::Offer<Primitives::Composition::FamilyRuntime<Family>>

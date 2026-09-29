@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - event_v1
   pull_request:
 
 jobs:
@@ -32,13 +31,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ESPressio-Development-Platform/EDP-Memory
-          ref: event_v1
+          ref: main
           path: EDP-Memory
       - name: Checkout EDP-Threading Event integration
         uses: actions/checkout@v4
         with:
           repository: ESPressio-Development-Platform/EDP-Threading
-          ref: event_v1
+          ref: main
           path: EDP-Threading
       - name: Checkout EDP-Clock
         uses: actions/checkout@v4
@@ -77,8 +76,8 @@ jobs:
           for repo in EDP-System EDP-Primitives EDP-Clock EDP-BoundedTopology EDP-BoundedTypes EDP-Platform; do
             git clone --depth 1 "https://github.com/ESPressio-Development-Platform/${repo}.git" "$repo"
           done
-          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Memory.git EDP-Memory
-          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Threading.git EDP-Threading
+          git clone --depth 1 --branch main https://github.com/ESPressio-Development-Platform/EDP-Memory.git EDP-Memory
+          git clone --depth 1 --branch main https://github.com/ESPressio-Development-Platform/EDP-Threading.git EDP-Threading
       - name: Run UBSan
         env:
           CXX: clang++
@@ -97,8 +96,8 @@ jobs:
           for repo in EDP-System EDP-Primitives EDP-Clock EDP-BoundedTopology EDP-BoundedTypes EDP-Platform EDP-Platform-Portable EDP-Platform-FreeRTOS EDP-Platform-ESP-IDF; do
             git clone --depth 1 "https://github.com/ESPressio-Development-Platform/${repo}.git" "$repo"
           done
-          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Memory.git EDP-Memory
-          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Threading.git EDP-Threading
+          git clone --depth 1 --branch main https://github.com/ESPressio-Development-Platform/EDP-Memory.git EDP-Memory
+          git clone --depth 1 --branch main https://github.com/ESPressio-Development-Platform/EDP-Threading.git EDP-Threading
       - name: Install PlatformIO-compatible CLI
         run: python -m pip install --upgrade platformio
       - name: Build current-branch Event PIOArduino demos

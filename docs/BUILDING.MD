@@ -23,7 +23,7 @@ For ESP-IDF use the same `platform` and `board`, set `framework = espidf`, and r
 
 ## Repository dependency baseline
 
-The current `event_v1` branch depends on prerequisite Event-integration APIs on `EDP-Memory/event_v1` and `EDP-Threading/event_v1`. All other mandatory EDP dependencies use their normal current baseline. Arduino IDE validation therefore uses the coherent sibling-repository workspace rather than independently resolving arbitrary versions.
+`EDP-Event/main` depends on Event-integration APIs now present on `EDP-Memory/main` and `EDP-Threading/main`. All mandatory EDP dependencies use their `main` baseline. Arduino IDE validation therefore uses the coherent sibling-repository workspace rather than independently resolving arbitrary versions.
 
 ## Validation commands
 

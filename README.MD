@@ -371,7 +371,7 @@ EDP-Event
 └── EDP-BoundedTypes
 ```
 
-On the current `event_v1` development branch, `EDP-Memory` and `EDP-Threading` must also be consumed from their `event_v1` branches because the compact indexed-pool and Dedicated-Thread wake/mutex prerequisites have not yet landed on those repositories' `main` branches. `library.json`, the PIOArduino demo projects and `examples/TemperatureMonitor` pin those prerequisite refs explicitly; Arduino IDE users must check out the same branches manually.
+`EDP-Memory` and `EDP-Threading` are consumed from their `main` branches. The compact indexed-pool and Dedicated-Thread wake/mutex prerequisites are now integrated into those repositories' `main` branches. `library.json`, the PIOArduino demo projects and `examples/TemperatureMonitor` pin those refs explicitly to `main`; Arduino IDE users should use matching `main` checkouts in the coherent sibling workspace.
 
 See [`DEPENDENCY_GRAPH.MD`](./DEPENDENCY_GRAPH.MD) for ownership and direction details.
 

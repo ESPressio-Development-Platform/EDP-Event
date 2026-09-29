@@ -13,7 +13,7 @@ EDP-Event
 └── EDP-BoundedTypes       mandatory — recursive finite/self-contained Event payload qualification
 ```
 
-The dependency directions above are architectural. On `EDP-Event/event_v1`, the concrete package refs for `EDP-Memory` and `EDP-Threading` are temporarily pinned to their respective `event_v1` branches because Event requires the compact dedicated-index Object Pool seam and the Dedicated-Thread wake/keyed ordinary-mutex seam that are not yet present on those repositories' `main` branches. This is a branch/refinement requirement, not an additional dependency edge.
+The dependency directions above are architectural. The concrete package refs for `EDP-Memory` and `EDP-Threading` are pinned to `main`. Event requires the compact dedicated-index Object Pool seam and the Dedicated-Thread wake/keyed ordinary-mutex seam; those prerequisites are now integrated into the respective repositories' `main` branches. This remains a dependency-baseline requirement, not an additional dependency edge.
 
 Concrete Platform providers are selected by the application through `EDP-Memory` and `EDP-Threading`; they are not direct `EDP-Event` dependencies.
 

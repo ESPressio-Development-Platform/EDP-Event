@@ -1,0 +1,115 @@
+name: Validation
+
+on:
+  push:
+    branches:
+      - main
+      - event_v1
+  pull_request:
+
+jobs:
+  host-contracts:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - name: Checkout EDP-Event
+        uses: actions/checkout@v4
+        with:
+          path: EDP-Event
+      - name: Checkout EDP-System
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-System
+          path: EDP-System
+      - name: Checkout EDP-Primitives
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-Primitives
+          path: EDP-Primitives
+      - name: Checkout EDP-Memory Event integration
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-Memory
+          ref: event_v1
+          path: EDP-Memory
+      - name: Checkout EDP-Threading Event integration
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-Threading
+          ref: event_v1
+          path: EDP-Threading
+      - name: Checkout EDP-Clock
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-Clock
+          path: EDP-Clock
+      - name: Checkout EDP-BoundedTopology
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-BoundedTopology
+          path: EDP-BoundedTopology
+      - name: Checkout EDP-BoundedTypes
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-BoundedTypes
+          path: EDP-BoundedTypes
+      - name: Checkout EDP-Platform
+        uses: actions/checkout@v4
+        with:
+          repository: ESPressio-Development-Platform/EDP-Platform
+          path: EDP-Platform
+      - name: Run Event host contracts
+        env:
+          CXX: ${{ matrix.compiler }}
+        run: python3 EDP-Event/tests/run_tests.py
+
+  ubsan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout EDP-Event
+        uses: actions/checkout@v4
+        with: {path: EDP-Event}
+      - name: Checkout dependency workspace
+        shell: bash
+        run: |
+          for repo in EDP-System EDP-Primitives EDP-Clock EDP-BoundedTopology EDP-BoundedTypes EDP-Platform; do
+            git clone --depth 1 "https://github.com/ESPressio-Development-Platform/${repo}.git" "$repo"
+          done
+          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Memory.git EDP-Memory
+          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Threading.git EDP-Threading
+      - name: Run UBSan
+        env:
+          CXX: clang++
+          EDP_EVENT_SANITIZER_MODE: undefined
+        run: python3 EDP-Event/tests/run_tests.py
+
+  platform-demos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout EDP-Event
+        uses: actions/checkout@v4
+        with: {path: EDP-Event}
+      - name: Checkout dependency workspace
+        shell: bash
+        run: |
+          for repo in EDP-System EDP-Primitives EDP-Clock EDP-BoundedTopology EDP-BoundedTypes EDP-Platform EDP-Platform-Portable EDP-Platform-FreeRTOS EDP-Platform-ESP-IDF; do
+            git clone --depth 1 "https://github.com/ESPressio-Development-Platform/${repo}.git" "$repo"
+          done
+          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Memory.git EDP-Memory
+          git clone --depth 1 --branch event_v1 https://github.com/ESPressio-Development-Platform/EDP-Threading.git EDP-Threading
+      - name: Install PlatformIO-compatible CLI
+        run: python -m pip install --upgrade platformio
+      - name: Build current-branch Event PIOArduino demos
+        run: bash EDP-Event/tests/run_demo_builds.sh
+      - name: Build complete TemperatureMonitor example
+        run: bash EDP-Event/tests/run_example_build.sh
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install Arduino ESP32 core
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      - name: Build Arduino IDE demo variants
+        run: bash EDP-Event/tests/run_arduino_ide_builds.sh

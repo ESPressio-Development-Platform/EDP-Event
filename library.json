@@ -1,0 +1,66 @@
+{
+  "name": "EDP-Event",
+  "description": "Deterministic bounded broadcast Event primitive for the ESPressio Development Platform",
+  "keywords": "espressio,event,broadcast,queue,embedded,deterministic,bounded",
+  "homepage": "https://espressio.org",
+  "authors": {
+    "name": "Simon Stuart",
+    "maintainer": true,
+    "url": "https://espressio.org"
+  },
+  "build": {
+    "flags": [
+      "-std=gnu++20"
+    ],
+    "unflags": [
+      "-std=gnu++11",
+      "-std=gnu++14",
+      "-std=gnu++17"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ESPressio-Development-Platform/EDP-Event.git"
+  },
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "frameworks": "*",
+  "platforms": "*",
+  "dependencies": [
+    {
+      "name": "EDP-System",
+      "version": "https://github.com/ESPressio-Development-Platform/EDP-System.git#main",
+      "platforms": "*"
+    },
+    {
+      "name": "EDP-Primitives",
+      "version": "https://github.com/ESPressio-Development-Platform/EDP-Primitives.git#main",
+      "platforms": "*"
+    },
+    {
+      "name": "EDP-Memory",
+      "version": "https://github.com/ESPressio-Development-Platform/EDP-Memory.git#event_v1",
+      "platforms": "*"
+    },
+    {
+      "name": "EDP-Threading",
+      "version": "https://github.com/ESPressio-Development-Platform/EDP-Threading.git#event_v1",
+      "platforms": "*"
+    },
+    {
+      "name": "EDP-Clock",
+      "version": "https://github.com/ESPressio-Development-Platform/EDP-Clock.git#main",
+      "platforms": "*"
+    },
+    {
+      "name": "EDP-BoundedTopology",
+      "version": "https://github.com/ESPressio-Development-Platform/EDP-BoundedTopology.git#main",
+      "platforms": "*"
+    },
+    {
+      "name": "EDP-BoundedTypes",
+      "version": "https://github.com/ESPressio-Development-Platform/EDP-BoundedTypes.git#main",
+      "platforms": "*"
+    }
+  ]
+}

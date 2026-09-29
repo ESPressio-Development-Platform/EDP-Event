@@ -12,6 +12,7 @@
 #include <ESPressio_Event.hpp>
 
 namespace Test {
+
     namespace Event = ESPressio::Event;
     namespace Primitives = ESPressio::Primitives;
     namespace BoundedTopology = ESPressio::BoundedTopology;
@@ -22,23 +23,30 @@ namespace Test {
     struct Listener final {};
 
     struct QueueEvent final {
+        /// Stable Primitive Type identity used by this test Event.
         inline static constexpr ESPressio::System::TypeIdentifier Identifier{
             ESPressio::System::TypeIdentifier::Storage{
                 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x21, 0x01
             }
         };
+        /// Primitive family binding proving this payload is an Event.
         using Family = Event::Family;
+        /// Test payload value used to verify delivery semantics.
         std::uint16_t Value{};
     };
-}
+
+} // Test
 
 namespace ESPressio::Bounded {
+
     template<>
     struct MemoryBoundedTraits<Test::QueueEvent> :
         MemoryBoundedValueDeclaration<false, std::uint16_t> {};
-}
+
+} // ESPressio::Bounded
 
 namespace Test {
+
     inline constexpr std::size_t EventCount = 64U;
 
     using PrimitiveTopology = Primitives::Topology<
@@ -52,14 +60,23 @@ namespace Test {
 
     template<class TObject, std::size_t TCapacity>
     class FakePool final {
-    public:
-        using DedicatedIndex = BoundedTopology::BoundedIndex<PoolIndexSpace<TObject>, TCapacity>;
 
-    private:
-        std::array<std::optional<TObject>, TCapacity> _objects{};
+        private:
 
-    public:
+            /// Internal strong slot identity used by the fake bounded pool.
+            using DedicatedIndexType = BoundedTopology::BoundedIndex<PoolIndexSpace<TObject>, TCapacity>;
+
+            /// Fixed-capacity optional storage modelling the Memory-owned object pool.
+            std::array<std::optional<TObject>, TCapacity> _objects{};
+
+        public:
+
+            /// Public slot identity required by the EDP-Memory pool contract.
+            using DedicatedIndex = DedicatedIndexType;
+
+        /// @tparam TArgs Constructor argument Types forwarded into the retained test object.
         template<class... TArgs>
+        /// Acquires the first free fake dedicated slot and constructs the requested test object.
         Memory::DedicatedObjectPoolAcquisitionResult AcquireDedicated(
             DedicatedIndex& output,
             TArgs&&... args
@@ -77,10 +94,12 @@ namespace Test {
             return Memory::DedicatedObjectPoolAcquisitionResult::CapacityUnavailable;
         }
 
+        /// Resolves one valid fake slot index to its retained test object.
         TObject& DedicatedObject(DedicatedIndex index) noexcept {
             return *_objects[static_cast<std::size_t>(index.Value())];
         }
 
+        /// Releases one owned fake dedicated slot and invalidates the caller index.
         Memory::DedicatedObjectPoolReleaseResult ReleaseDedicated(DedicatedIndex& index) noexcept {
             if (!index.IsValid()) {
                 return Memory::DedicatedObjectPoolReleaseResult::InvalidIndex;
@@ -97,29 +116,38 @@ namespace Test {
 
     template<class TObject>
     struct FakeSpec final {
+        /// Exact dedicated capacity required by the Event occurrence record.
         using Dedicated = Memory::DedicatedInstances<TObject::MaximumInstances>;
+        /// Confirms the fake Event pool exposes no raw shared overflow.
         using Shared = Memory::NoSharedOverflow;
     };
 
     class FakeMemoryRuntime final {
+        /// Event occurrence record Type stored by this fake Memory Runtime.
         using Record = Event::OccurrenceRecord<Plan, QueueEvent>;
+        /// Fixed fake pool backing the single deployed Event Type.
         FakePool<Record, Record::MaximumInstances> _pool{};
 
     public:
         template<class TObject>
+        /// Maps an occurrence object Type to its fake bounded pool Type.
         using ObjectPoolType = FakePool<TObject, TObject::MaximumInstances>;
 
         struct Topology final {
             template<class TObject>
+            /// Test topology advertises the required occurrence pool.
             static constexpr bool ContainsObjectPool = true;
 
             template<class TObject>
+            /// Returns the exact fake pool specification for the requested object Type.
             using ObjectPoolSpecFor = FakeSpec<TObject>;
         };
 
+        /// Reports the fake Memory Runtime as initialized for Event tests.
         bool IsInitialized() const noexcept { return true; }
 
         template<class TObject>
+        /// Returns the fake pool bound to the requested occurrence object Type.
         auto& ObjectPoolFor() noexcept {
             static_assert(std::is_same_v<TObject, Record>);
             return _pool;
@@ -128,6 +156,7 @@ namespace Test {
 
     template<class TThread>
     struct FakeThread final {
+        /// Simulates a successful advisory Dedicated Thread wake.
         Threading::ThreadWakeResult Wake() noexcept {
             return Threading::ThreadWakeResult::Woken;
         }
@@ -135,6 +164,7 @@ namespace Test {
 
     struct FakeThreadingRuntime final {
         template<class TThread>
+        /// Returns a wake-capable fake Thread handle for the requested identity.
         FakeThread<TThread> ThreadHandle() noexcept { return {}; }
     };
 
@@ -145,14 +175,20 @@ namespace Test {
     };
 
     struct OperationMarker final {
+        /// Operation category recorded at one synchronization point.
         OperationKind Kind{OperationKind::None};
+
+        /// Payload value associated with the recorded operation.
         std::uint16_t Value{0U};
     };
 
     inline thread_local OperationMarker CurrentOperation{};
 
     struct LinearizationEntry final {
+        /// Operation category stored in one linearization log entry.
         OperationKind Kind{OperationKind::None};
+
+        /// Payload value stored in one linearization log entry.
         std::uint16_t Value{0U};
     };
 
@@ -162,11 +198,23 @@ namespace Test {
             CF::Offer<Threading::OrdinaryMutex<Event::Composition::RuntimeMutexIdentity>>
         >
     > {
+
+        // Mutex and linearization-log state.
+
+        /// Native host mutex used to serialize the Event Runtime under real contention.
         std::mutex _mutex;
+
+        /// Bounded record of observed protected-operation linearization order.
         std::array<LinearizationEntry, EventCount + 2U> _linearized{};
+
+        /// Number of valid entries currently retained in the bounded linearization log.
         std::size_t _count{0U};
 
     public:
+
+        // Ordinary mutex provider contract.
+
+        /// Acquires the host mutex and records the current test operation at the linearization point.
         Threading::OrdinaryMutexAcquireResult Acquire() noexcept {
             _mutex.lock();
             if (CurrentOperation.Kind != OperationKind::None) {
@@ -179,21 +227,27 @@ namespace Test {
             return Threading::OrdinaryMutexAcquireResult::Acquired;
         }
 
+        /// Releases the host mutex after one Event protected operation.
         Threading::OrdinaryMutexReleaseResult Release() noexcept {
             _mutex.unlock();
             return Threading::OrdinaryMutexReleaseResult::Released;
         }
 
+        // Linearization-log inspection.
+
+        /// Clears all retained operation-order evidence before the next race scenario.
         void ClearLinearizationLog() noexcept {
             std::scoped_lock lock(_mutex);
             _count = 0U;
         }
 
+        /// Returns the number of valid linearization entries recorded so far.
         std::size_t LinearizationCount() noexcept {
             std::scoped_lock lock(_mutex);
             return _count;
         }
 
+        /// Returns one recorded linearization entry by bounded host-test ordinal.
         LinearizationEntry LinearizationAt(std::size_t index) noexcept {
             std::scoped_lock lock(_mutex);
             assert(index < _count);
@@ -207,20 +261,33 @@ namespace Test {
             CF::Offer<Event::Composition::ListenerCallback<Listener, QueueEvent>>
         >
     > {
+
+        // Delivered-value evidence.
+
+        /// Bounded sequence of delivered payload values in callback order.
         std::array<std::uint16_t, EventCount + 1U> _delivered{};
+
+        /// Number of delivered values currently retained in the evidence array.
         std::size_t _count{0U};
 
     public:
+
+        // Listener callback and inspection surface.
+
+        /// Records one delivered Queue Event value without allocating.
         void OnEvent(const QueueEvent& event) noexcept {
             assert(_count < _delivered.size());
             _delivered[_count++] = event.Value;
         }
 
+        /// Returns the number of callback values recorded by this handler.
         std::size_t Count() const noexcept { return _count; }
+        /// Returns one recorded callback payload by bounded host-test ordinal.
         std::uint16_t At(std::size_t index) const noexcept {
             assert(index < _count);
             return _delivered[index];
         }
+        /// Clears recorded callback evidence before the next test scenario.
         void Clear() noexcept { _count = 0U; }
     };
 
@@ -345,7 +412,8 @@ namespace Test {
             assert(handler.Count() == 0U);
         }
     }
-}
+
+} // Test
 
 int main() {
     Test::VerifyConcurrentProducerLinearization();

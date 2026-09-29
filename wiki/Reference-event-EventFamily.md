@@ -1,12 +1,11 @@
 # Reference — `src/event/EventFamily.hpp`
 
-**Classification:** PUBLIC API  
 **Source:** [`src/event/EventFamily.hpp`](../src/event/EventFamily.hpp)
 
-## `Planner`
+## `Planner` — PUBLIC FORWARD DECLARATION
 
-Forward declaration of the Event family planner so `Family` can identify its canonical planner without introducing include cycles.
+Forward declaration of Event's canonical family planner, allowing `Family::Planner` to name the planner without pulling the implementation into this foundational header.
 
-## `Family`
+## `Family` — PUBLIC PRIMITIVE FAMILY TAG
 
-Strong Event Primitive-family identity. Its nested `Planner` alias tells `EDP-Primitives` which family-specific planner must normalize opaque Event declarations. It has no runtime state and exists only in type space.
+`Family` identifies Event to EDP-Primitives. `Identifier` is the authoritative stable `PrimitiveFamilyIdentifier`; `Planner` aliases `Event::Planner`.

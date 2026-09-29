@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "Deployment.hpp"
 #include "EventTypes.hpp"
 #include "Retention.hpp"
 
@@ -15,7 +16,7 @@ namespace ESPressio::Event {
     /// @tparam TEvent Concrete Event payload Type presented to the remote operation.
     /// @tparam TRetention Per-Dispatch retention request Type.
     /// @tparam TRemoteOperation External bounded remote-domain operation Type.
-    template<class TEvent, RetentionRequest TRetention, class TRemoteOperation>
+    template<EventType TEvent, RetentionRequest TRetention, class TRemoteOperation>
     [[nodiscard]] auto DispatchScoped(
         RemoteOnly,
         const TEvent& event,

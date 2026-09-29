@@ -14,6 +14,7 @@ namespace EventTestSupport {
 
     template<std::uint8_t TOrdinal>
     struct EventValue final {
+        /// Stable test Primitive Type identity derived from the template ordinal.
         inline static constexpr System::TypeIdentifier Identifier{
             System::TypeIdentifier::Storage{
                 0x00U, 0x00U, 0x01U, 0x00U,
@@ -21,7 +22,9 @@ namespace EventTestSupport {
                 static_cast<std::uint8_t>(TOrdinal + 1U)
             }
         };
+        /// Primitive family binding proving this test payload is an Event.
         using Family = Event::Family;
+        /// Integer payload used by host and compile-fail Event tests.
         int Value{};
     };
 

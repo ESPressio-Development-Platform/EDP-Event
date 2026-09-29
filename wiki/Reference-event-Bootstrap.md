@@ -17,13 +17,13 @@ Bootstrap bridges a normalized Event plan to already-owned Memory, Threading, mu
 
 # `Detail::BootstrapImpl`
 
-Nested aliases expose `ArchitectureType`, `Plan`, `MemoryRuntime`, `ThreadingRuntime`, selected `MutexProvider`, selected `ThreadingTopology`, `CallbackProviders`, and concrete `RuntimeType`.
+Private aliases `SelectedMutexProvider`, `SelectedThreadingTopology`, and `BoundRuntime` resolve exact provider/runtime Types. Public aliases expose `ArchitectureType`, `Plan`, `MemoryRuntime`, `ThreadingRuntime`, `MutexProvider`, `ThreadingTopology`, `CallbackProviders`, and `RuntimeType`.
 
-Retained state is application-owned dependency references plus one owned Runtime object. No provider is heap-allocated or copied.
+Private retained members are `_memory` (borrowed application-owned Memory Runtime), `_threading` (borrowed Threading Runtime), `_mutex` (borrowed selected ordinary mutex provider), and `_runtime` (Event-owned bounded Runtime). The borrowed providers must outlive Bootstrap.
 
 ## Construction
 
-Constructor arguments are the application Memory Runtime, Threading Runtime, selected Event mutex provider and exact callback providers. Compile-time validation rejects missing/duplicate providers, missing Dedicated Threads, wrong callback signature/noexcept contract and incompatible Threading Runtime surface.
+The constructor binds the application Memory Runtime, Threading Runtime, selected Event mutex provider and exact callback providers, then constructs `_runtime`. Copy and move construction/assignment are deleted so provider addresses and Runtime identity cannot be invalidated. Compile-time validation rejects missing/duplicate providers, missing Dedicated Threads, wrong callback signature/noexcept contract and incompatible Threading Runtime surface.
 
 ## `Initialize()`
 

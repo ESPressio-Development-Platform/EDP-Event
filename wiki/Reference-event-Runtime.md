@@ -19,13 +19,13 @@ Runtime realizes one normalized local Event topology over application-owned Memo
 
 `RecordView<TPlan,TEvent,TPool>` adapts EDP-Memory dedicated indexed storage to the record-indexing contract required by `BoundedTopology::IntrusiveQueue`; retained member `_pool` is a borrowed pool pointer.
 
-`AnyTimedDeployment<TList>` is a compile-time predicate used to require a bound canonical monotonic Clock only when at least one deployment can retain deadlines.
+`AnyTimedDeployment<TList>` is a compile-time predicate used to require a bound canonical monotonic Clock only when at least one deployment can retain deadlines. `DeliveryAttemptResult` is a PRIVATE strong operational result: `Delivered` means one callback completed and `NoPendingOccurrence` means no claimable occurrence existed.
 
 # `Runtime<TPlan,TArchitecture,TMemoryRuntime,TThreadingRuntime,TMutexProvider,TCallbackProviders...>`
 
 Template parameters bind the normalized semantic plan, provider-resolution Architecture, already-owned Memory/Threading runtimes, selected Event ordinary mutex and exact typed callback providers. Runtime derives `PrimitiveTypes`, `Listeners`, `Observations`, Type state tuple and Listener cursor tuple.
 
-Private retained provider members `_memory`, `_threading`, `_mutex` and `_callbacks` are non-owning. `_types`, `_listenerCursors`, `_sharedPending`, and `_initialized` are Event-owned bounded state.
+Private aliases `PrimitiveTypes`, `Listeners`, `Observations`, `TypeStates`, `ListenerCursors`, `RequiredCallbackProviders`, and `BoundCallbackProviders` encode normalized topology and exact provider/state tuples. Private retained provider members `_memory`, `_threading`, `_mutex` and `_callbacks` are non-owning. `_types`, `_listenerCursors`, `_sharedPending`, and `_initialized` are Event-owned bounded state.
 
 ## Infrastructure failure boundary
 
@@ -61,9 +61,7 @@ NewestOnly replaces an unborrowed pending occurrence in place when possible. If 
 
 ## Listener claim/callback
 
-`TryDeliverOne<TThread,TEvent>()` locks, sweeps expiry, finds the oldest Queue occurrence (or NewestOnly occurrence) whose recipient bit includes the Listener, claims it, removes exhausted pending topology, captures `const TEvent*`, then unlocks. The typed callback provider is selected by Architecture capability, invoked `noexcept` outside the mutex, then Runtime reacquires the mutex to release the borrow/reclaim storage.
-
-`TryDeliverOrdinal`, `SetCursor`, `HasPendingForType`, and `HasAnyPending` provide bounded cross-Type drain/fairness and WorkRemaining calculation.
+`TryDeliverOne<TThread,TEvent>()` performs bounded claim/delivery and returns `DeliveryAttemptResult::Delivered` or `NoPendingOccurrence`; claim itself uses `OccurrenceClaimResult`. `TryDeliverOrdinal<TThread,TIndex>(ordinal)` recursively selects an observed Type and propagates the same strong result. `SetCursor`, `HasPendingForType`, and `HasAnyPending` provide bounded fairness and genuine pending-work predicates.
 
 # Public operations
 
@@ -102,3 +100,7 @@ Typed inbound facade equivalent to LocalOnly admission after an external Transpo
 ## `Drain<TThread>(maximumDeliveries)`
 
 Services at most the explicit callback budget. For multi-Type Listeners it begins at the retained round-robin cursor and advances after each delivery. After the budget/no-work condition it reports pending work under the mutex and advisorially wakes the Thread again when WorkRemaining is true. It never blocks; the Dedicated Thread decides when to call ThreadContext::Wait().
+
+## Additional private declaration coverage
+
+Internal templates use `TThreadIdentity` as the selected Dedicated Thread semantic identity and `TEventArgument` as a forwarding payload argument. `Storage` is the compact storage representation chosen for bounded counters/indices where present. `ListenerTypes` denotes the compile-time Listener TypeList consumed by Listener-state helpers; `ThreadIdentity` is the semantic identity extracted for one Listener specialization. `EventRecord` names the exact `OccurrenceRecord<TPlan,TEvent>` stored in a selected pool; `PoolSpec` names the corresponding Memory pool specification. `RemoteResult` names the native return Type of a selected outbound remote operation. `typeCount` is the compile-time number of observed Event Types used by bounded drain/fairness traversal. These are private compile-time/runtime implementation details and do not create independent ownership.

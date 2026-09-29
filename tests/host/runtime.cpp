@@ -8,6 +8,7 @@
 #include <ESPressio_Event.hpp>
 
 namespace Test {
+
     namespace Event = ESPressio::Event;
     namespace Primitives = ESPressio::Primitives;
     namespace BoundedTopology = ESPressio::BoundedTopology;
@@ -20,35 +21,48 @@ namespace Test {
     struct ListenerB {};
 
     struct QueueEvent final {
+        /// Stable Primitive Type identity used by this test Event.
         inline static constexpr ESPressio::System::TypeIdentifier Identifier{
             ESPressio::System::TypeIdentifier::Storage{0x00,0x00,0x01,0x00,0x00,0x00,0x20,0x01}
         };
+        /// Primitive family binding proving this payload is an Event.
         using Family = Event::Family;
+        /// Test payload value used to verify delivery semantics.
         int Value{};
     };
 
     struct LatestEvent final {
+        /// Stable Primitive Type identity used by this test Event.
         inline static constexpr ESPressio::System::TypeIdentifier Identifier{
             ESPressio::System::TypeIdentifier::Storage{0x00,0x00,0x01,0x00,0x00,0x00,0x20,0x02}
         };
+        /// Primitive family binding proving this payload is an Event.
         using Family = Event::Family;
+        /// Test payload value used to verify delivery semantics.
         int Value{};
     };
 
     struct TestClock final {
+        /// Mutable canonical time source controlled by the host test.
         mutable std::uint64_t NowNs{100U};
+
+        /// Returns the current test-controlled monotonic timestamp.
         Clock::MonotonicTimestamp Now() const noexcept {
             return Clock::MonotonicTimestamp::FromNanoseconds(NowNs);
         }
     };
-}
+
+} // Test
 
 namespace ESPressio::Bounded {
+
     template<> struct MemoryBoundedTraits<Test::QueueEvent> : MemoryBoundedValueDeclaration<false, int> {};
     template<> struct MemoryBoundedTraits<Test::LatestEvent> : MemoryBoundedValueDeclaration<false, int> {};
-}
+
+} // ESPressio::Bounded
 
 namespace Test {
+
     using PrimitiveTopology = Primitives::Topology<
         Event::Deploy<QueueEvent, 3U, Event::Queue<1U>, Event::TimedRetention>,
         Event::Deploy<LatestEvent, 2U, Event::NewestOnly, Event::UntilHandoffOnly>,
@@ -69,12 +83,23 @@ namespace Test {
 
     template<class TObject, std::size_t TCapacity>
     class FakePool final {
-    public:
-        using DedicatedIndex = BoundedTopology::BoundedIndex<PoolIndexSpace<TObject>, TCapacity>;
-    private:
-        std::array<std::optional<TObject>, TCapacity> _objects{};
-    public:
+
+        private:
+
+            /// Internal strong slot identity used by the fake bounded pool.
+            using DedicatedIndexType = BoundedTopology::BoundedIndex<PoolIndexSpace<TObject>, TCapacity>;
+
+            /// Fixed-capacity optional storage modelling the Memory-owned object pool.
+            std::array<std::optional<TObject>, TCapacity> _objects{};
+
+        public:
+
+            /// Public slot identity required by the EDP-Memory pool contract.
+            using DedicatedIndex = DedicatedIndexType;
+
+        /// @tparam TArgs Constructor argument Types forwarded into the retained test object.
         template<class... TArgs>
+        /// Acquires the first free fake dedicated slot and constructs the requested test object.
         Memory::DedicatedObjectPoolAcquisitionResult AcquireDedicated(
             DedicatedIndex& output,
             TArgs&&... args
@@ -90,12 +115,15 @@ namespace Test {
             return Memory::DedicatedObjectPoolAcquisitionResult::CapacityUnavailable;
         }
 
+        /// Resolves one valid fake slot index to its mutable retained object.
         TObject& DedicatedObject(DedicatedIndex index) noexcept {
             return *_objects[static_cast<std::size_t>(index.Value())];
         }
+        /// Resolves one valid fake slot index to its immutable retained object.
         const TObject& DedicatedObject(DedicatedIndex index) const noexcept {
             return *_objects[static_cast<std::size_t>(index.Value())];
         }
+        /// Releases one owned fake dedicated slot and invalidates the caller index.
         Memory::DedicatedObjectPoolReleaseResult ReleaseDedicated(DedicatedIndex& index) noexcept {
             if (!index.IsValid()) return Memory::DedicatedObjectPoolReleaseResult::InvalidIndex;
             auto& slot = _objects[static_cast<std::size_t>(index.Value())];
@@ -108,7 +136,9 @@ namespace Test {
 
     template<class TObject>
     struct FakeSpec final {
+        /// Exact dedicated capacity required by the Event occurrence record.
         using Dedicated = Memory::DedicatedInstances<TObject::MaximumInstances>;
+        /// Confirms the fake Event pool exposes no raw shared overflow.
         using Shared = Memory::NoSharedOverflow;
     };
 
@@ -117,22 +147,29 @@ namespace Test {
 
     template<class TPlan, class... TEvents>
     class FakeMemoryRuntimeImpl<TPlan, Primitives::TypeList<TEvents...>> final {
+        /// Tuple containing one fake occurrence pool for every deployed Event Type.
         using Pools = std::tuple<
             FakePool<Event::OccurrenceRecord<TPlan, TEvents>, Event::OccurrenceRecord<TPlan, TEvents>::MaximumInstances>...
         >;
+        /// Owned fake pool tuple used by the Runtime host test.
         Pools _pools{};
     public:
         template<class TObject>
+        /// Maps an occurrence object Type to its fake bounded pool Type.
         using ObjectPoolType = FakePool<TObject, TObject::MaximumInstances>;
 
         struct Topology final {
             template<class TObject>
+            /// Test topology advertises every requested occurrence pool.
             static constexpr bool ContainsObjectPool = true;
             template<class TObject>
+            /// Returns the exact fake pool specification for the requested object Type.
             using ObjectPoolSpecFor = FakeSpec<TObject>;
         };
+        /// Reports the fake Memory Runtime as initialized for Event tests.
         bool IsInitialized() const noexcept { return true; }
         template<class TObject>
+        /// Returns the fake pool bound to the requested occurrence object Type.
         auto& ObjectPoolFor() noexcept {
             return std::get<FakePool<TObject, TObject::MaximumInstances>>(_pools);
         }
@@ -140,11 +177,19 @@ namespace Test {
 
     using FakeMemoryRuntime = FakeMemoryRuntimeImpl<Plan, typename Plan::PrimitiveTypes>;
 
+    /// Per-Thread wake evidence retained by the fake Threading Runtime.
+    /// @tparam TThread Semantic Dedicated Thread identity whose wake count is recorded.
     template<class TThread>
-    struct WakeCounter final { inline static int Count = 0; };
+    struct WakeCounter final {
+
+        /// Number of advisory wake requests observed for this Thread identity.
+        inline static int Count = 0;
+
+    };
 
     template<class TThread>
     struct FakeThread final {
+        /// Simulates a successful advisory Dedicated Thread wake.
         Threading::ThreadWakeResult Wake() noexcept {
             ++WakeCounter<TThread>::Count;
             return Threading::ThreadWakeResult::Woken;
@@ -153,6 +198,7 @@ namespace Test {
 
     struct FakeThreadingRuntime final {
         template<class TThread>
+        /// Returns a wake-capable fake Thread handle for the requested identity.
         FakeThread<TThread> ThreadHandle() noexcept { return {}; }
     };
 
@@ -162,12 +208,21 @@ namespace Test {
             CF::Offer<Threading::OrdinaryMutex<Event::Composition::RuntimeMutexIdentity>>
         >
     > {
+
+        // Fake mutex state.
+
+        /// Indicates whether the fake ordinary mutex is currently held.
         bool Held{false};
+
+        // Ordinary mutex provider contract.
+
+        /// Acquires the fake mutex or reports provider failure for invalid nested acquisition.
         Threading::OrdinaryMutexAcquireResult Acquire() noexcept {
             if (Held) return Threading::OrdinaryMutexAcquireResult::ProviderFailure;
             Held = true;
             return Threading::OrdinaryMutexAcquireResult::Acquired;
         }
+        /// Releases the fake mutex or reports provider failure when it was not held.
         Threading::OrdinaryMutexReleaseResult Release() noexcept {
             if (!Held) return Threading::OrdinaryMutexReleaseResult::ProviderFailure;
             Held = false;
@@ -182,21 +237,44 @@ namespace Test {
             CF::Offer<Event::Composition::ListenerCallback<ListenerA, LatestEvent>>
         >
     > {
+
+        // Optional post-callback hook Types.
+
+        /// Queue callback hook used to exercise callback-outside-lock reentrancy.
         using QueueHook = void (*)(void*, const QueueEvent&) noexcept;
+
+        /// NewestOnly callback hook used to exercise callback-outside-lock reentrancy.
         using LatestHook = void (*)(void*, const LatestEvent&) noexcept;
 
+        // Callback evidence and hook state.
+
+        /// Sum of Queue Event values observed by Listener A.
         int QueueSum{0};
+
+        /// Most recent NewestOnly Event value observed by Listener A.
         int LatestLast{0};
+
+        /// Optional opaque context supplied to the Queue post-callback hook.
         void* QueueContext{nullptr};
+
+        /// Optional Queue post-callback hook.
         QueueHook QueueAfter{nullptr};
+
+        /// Optional opaque context supplied to the NewestOnly post-callback hook.
         void* LatestContext{nullptr};
+
+        /// Optional NewestOnly post-callback hook.
         LatestHook LatestAfter{nullptr};
 
+        // Typed Listener callback provider contract.
+
+        /// Records Queue delivery and invokes the optional reentrancy hook.
         void OnEvent(const QueueEvent& event) noexcept {
             QueueSum += event.Value;
             if (QueueAfter != nullptr) QueueAfter(QueueContext, event);
         }
 
+        /// Records NewestOnly delivery and invokes the optional reentrancy hook.
         void OnEvent(const LatestEvent& event) noexcept {
             LatestLast = event.Value;
             if (LatestAfter != nullptr) LatestAfter(LatestContext, event);
@@ -209,7 +287,15 @@ namespace Test {
             CF::Offer<Event::Composition::ListenerCallback<ListenerB, QueueEvent>>
         >
     > {
+
+        // Callback evidence.
+
+        /// Weighted sum of Queue values observed by Listener B.
         int Sum{0};
+
+        // Typed Listener callback provider contract.
+
+        /// Accumulates one Queue Event using a distinguishable weighting factor.
         void OnEvent(const QueueEvent& event) noexcept { Sum += event.Value * 10; }
     };
 
@@ -260,13 +346,17 @@ namespace Test {
     }
 
     struct RemoteOperation final {
+        /// Number of remote handoff invocations observed by the test.
         int Calls{0};
+
+        /// Returns a deterministic provider result derived from the Event payload.
         int operator()(const QueueEvent& event) noexcept {
             ++Calls;
             return event.Value * 100;
         }
     };
-}
+
+} // Test
 
 int main() {
     using namespace Test;
@@ -378,7 +468,10 @@ int main() {
     );
     assert(validBoth.Local() == Event::DispatchResult::Accepted);
     assert(validBoth.Remote().WasAttempted());
-    assert(validBoth.Remote().Result() == 800);
+    assert(validBoth.Remote().GetState() == Event::RemoteDispatchAttemptState::Attempted);
+    const auto* validBothResult = validBoth.Remote().ResultIfPresent();
+    assert(validBothResult != nullptr);
+    assert(*validBothResult == 800);
     assert(remote.Calls == 1);
 
     auto skippedRemote = Event::DispatchScoped(
@@ -388,6 +481,8 @@ int main() {
         remote
     );
     assert(skippedRemote.WasSkippedExpired());
+    assert(skippedRemote.GetState() == Event::RemoteDispatchAttemptState::SkippedExpired);
+    assert(skippedRemote.ResultIfPresent() == nullptr);
     assert(remote.Calls == 1);
 
     auto attemptedRemote = Event::DispatchScoped(
@@ -397,7 +492,9 @@ int main() {
         remote
     );
     assert(attemptedRemote.WasAttempted());
-    assert(attemptedRemote.Result() == 800);
+    const auto* attemptedRemoteResult = attemptedRemote.ResultIfPresent();
+    assert(attemptedRemoteResult != nullptr);
+    assert(*attemptedRemoteResult == 800);
     assert(remote.Calls == 2);
 
     // Domain attempts remain independent: local capacity failure does not suppress remote handoff.
@@ -410,7 +507,9 @@ int main() {
     );
     assert(capacityAndRemote.Local() == Event::DispatchResult::NoCapacity);
     assert(capacityAndRemote.Remote().WasAttempted());
-    assert(capacityAndRemote.Remote().Result() == 900);
+    const auto* capacityRemoteResult = capacityAndRemote.Remote().ResultIfPresent();
+    assert(capacityRemoteResult != nullptr);
+    assert(*capacityRemoteResult == 900);
     assert(remote.Calls == 3);
 
     assert(!mutex.Held);

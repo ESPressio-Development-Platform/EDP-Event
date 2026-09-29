@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <ESPressio_Clock.hpp>
+#include <ESPressio_Memory.hpp>
 
 namespace ESPressio::Event {
 
@@ -59,6 +60,16 @@ namespace ESPressio::Event {
 
         /// A required owning-domain provider was not ready or available.
         ProviderFailure = 2U
+    };
+
+
+    /// Observable Event-level state of one external remote Dispatch attempt.
+    enum class RemoteDispatchAttemptState : std::uint8_t {
+        /// The common expiry gate prevented the remote operation from being called.
+        SkippedExpired = 0U,
+
+        /// The remote operation was called exactly once and produced a native result.
+        Attempted = 1U
     };
 
 
@@ -119,23 +130,12 @@ namespace ESPressio::Event {
     template<class TRemoteResult>
     class RemoteDispatchAttempt final {
 
-        public:
-
-            /// Observable Event-level state of the remote attempt.
-            enum class State : std::uint8_t {
-                /// The common expiry gate prevented the remote operation from being called.
-                SkippedExpired = 0U,
-
-                /// The remote operation was called exactly once and produced a native result.
-                Attempted = 1U
-            };
-
         private:
 
-            // Remote attempt state.
+            // Remote attempt state and conditional result storage.
 
             /// Authoritative presence/state indicator for the union-stored remote result.
-            State _state{State::SkippedExpired};
+            RemoteDispatchAttemptState _state{RemoteDispatchAttemptState::SkippedExpired};
 
             /// Manual storage allowing the provider-defined result to be absent when expiry skips the operation.
             union Storage {
@@ -149,12 +149,15 @@ namespace ESPressio::Event {
                 constexpr Storage() noexcept : Empty{} {
                 }
 
-                /// Leaves active-member destruction to RemoteDispatchAttempt.
+                /// Leaves active-member destruction to RemoteDispatchAttempt through EDP-Memory.
                 ~Storage() noexcept {
                 }
             } _storage{};
 
         public:
+
+            /// Compatibility alias exposing the Event-level attempt state Type through the wrapper.
+            using State = RemoteDispatchAttemptState;
 
             static_assert(
                 !std::is_void_v<TRemoteResult>,
@@ -176,14 +179,17 @@ namespace ESPressio::Event {
             /// Creates a remote attempt which was skipped because expiry prevented invocation.
             RemoteDispatchAttempt() noexcept = default;
 
-            /// Creates an attempted remote result by moving the provider-defined result into owned storage.
+            /// Creates an attempted remote result by transferring the provider-defined result through EDP-Memory.
             /// @param result Provider-defined result produced by the remote operation.
             explicit RemoteDispatchAttempt(
                 TRemoteResult result
             ) noexcept :
                 _state(State::Attempted) {
-                ::new (static_cast<void*>(&_storage.Result)) TRemoteResult(
-                    std::move(result)
+                static_cast<void>(
+                    Memory::ObjectLifetime::MoveConstruct<TRemoteResult>(
+                        static_cast<void*>(&_storage.Result),
+                        result
+                    )
                 );
             }
 
@@ -193,17 +199,20 @@ namespace ESPressio::Event {
             /// Remote attempt wrappers cannot be copy-assigned because their provider result may own exclusive state.
             RemoteDispatchAttempt& operator=(const RemoteDispatchAttempt&) = delete;
 
-            /// Moves the optional provider result and leaves the source in SkippedExpired state.
+            /// Moves the optional provider result through EDP-Memory and leaves the source in SkippedExpired state.
             /// @param other Source wrapper whose owned result, if present, is transferred.
             RemoteDispatchAttempt(
                 RemoteDispatchAttempt&& other
             ) noexcept :
                 _state(other._state) {
                 if (_state == State::Attempted) {
-                    ::new (static_cast<void*>(&_storage.Result)) TRemoteResult(
-                        std::move(other._storage.Result)
+                    static_cast<void>(
+                        Memory::ObjectLifetime::MoveConstruct<TRemoteResult>(
+                            static_cast<void*>(&_storage.Result),
+                            other._storage.Result
+                        )
                     );
-                    other._storage.Result.~TRemoteResult();
+                    Memory::ObjectLifetime::Destroy(other._storage.Result);
                     other._state = State::SkippedExpired;
                 }
             }
@@ -211,10 +220,10 @@ namespace ESPressio::Event {
             /// Move assignment is deliberately unavailable so active union state cannot be overwritten ambiguously.
             RemoteDispatchAttempt& operator=(RemoteDispatchAttempt&&) = delete;
 
-            /// Destroys the provider-defined result only when an attempted result is present.
+            /// Destroys the provider-defined result through EDP-Memory only when an attempted result is present.
             ~RemoteDispatchAttempt() noexcept {
                 if (_state == State::Attempted) {
-                    _storage.Result.~TRemoteResult();
+                    Memory::ObjectLifetime::Destroy(_storage.Result);
                 }
             }
 
@@ -237,14 +246,14 @@ namespace ESPressio::Event {
 
             // Provider result access.
 
-            /// Returns the mutable provider-defined result; caller must first establish WasAttempted().
-            [[nodiscard]] TRemoteResult& Result() noexcept {
-                return _storage.Result;
+            /// Returns the mutable provider-defined result when present, otherwise nullptr.
+            [[nodiscard]] TRemoteResult* ResultIfPresent() noexcept {
+                return _state == State::Attempted ? &_storage.Result : nullptr;
             }
 
-            /// Returns the immutable provider-defined result; caller must first establish WasAttempted().
-            [[nodiscard]] const TRemoteResult& Result() const noexcept {
-                return _storage.Result;
+            /// Returns the immutable provider-defined result when present, otherwise nullptr.
+            [[nodiscard]] const TRemoteResult* ResultIfPresent() const noexcept {
+                return _state == State::Attempted ? &_storage.Result : nullptr;
             }
 
     };
@@ -277,8 +286,8 @@ namespace ESPressio::Event {
                 TLocalResult local,
                 RemoteDispatchAttempt<TRemoteResult> remote
             ) noexcept :
-                _local(std::move(local)),
-                _remote(std::move(remote)) {
+                _local(Memory::OwnershipTransfer::Move(local)),
+                _remote(Memory::OwnershipTransfer::Move(remote)) {
             }
 
             /// Combined results cannot be copied because either domain result may own exclusive state.
@@ -287,8 +296,14 @@ namespace ESPressio::Event {
             /// Combined results cannot be copy-assigned because either domain result may own exclusive state.
             LocalAndRemoteDispatchResult& operator=(const LocalAndRemoteDispatchResult&) = delete;
 
-            /// Transfers both independent domain results.
-            LocalAndRemoteDispatchResult(LocalAndRemoteDispatchResult&&) noexcept = default;
+            /// Transfers both independent domain results through the EDP-Memory ownership abstraction.
+            /// @param other Source combined result whose independently owned outcomes are transferred.
+            LocalAndRemoteDispatchResult(
+                LocalAndRemoteDispatchResult&& other
+            ) noexcept :
+                _local(Memory::OwnershipTransfer::Move(other._local)),
+                _remote(Memory::OwnershipTransfer::Move(other._remote)) {
+            }
 
             /// Move assignment is deliberately unavailable to preserve simple single-construction result ownership.
             LocalAndRemoteDispatchResult& operator=(LocalAndRemoteDispatchResult&&) = delete;

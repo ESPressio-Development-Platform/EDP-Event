@@ -23,3 +23,5 @@ The supported consumer surface is exposed through `ESPressio_Event.hpp`.
 ## Integration helper
 
 `DispatchScoped(RemoteOnly,...)` supports an outbound-only Type without requiring a local Event Runtime/deployment. It applies the common expiry precondition then either returns `SkippedExpired` or invokes the external remote operation exactly once.
+
+`RemoteDispatchAttempt::ResultIfPresent()` returns a pointer only when the remote operation was attempted and `nullptr` for `SkippedExpired`, structurally preserving payload absence.

@@ -1,15 +1,57 @@
 # Building and Validation
 
-EDP-Event is a C++20 header-oriented library. Host contract tests are executed with `python3 tests/run_tests.py` from a workspace containing the required sibling EDP repositories.
+EDP-Event is a C++20 header-oriented library. C++20 is an absolute project baseline, not an optional build mode.
 
-The current `event_v1` development branch depends on prerequisite Event-integration APIs which are also still carried on `EDP-Memory/event_v1` and `EDP-Threading/event_v1`. PlatformIO metadata and the checked-in demo/example projects therefore pin those two repositories to `event_v1`; Arduino IDE users must likewise clone/check out those two prerequisite branches alongside EDP-Event until the prerequisite APIs are promoted to their respective `main` branches. All other mandatory EDP dependencies use `main`.
+## Recommended ESP32 toolchain — PIOArduino
 
-`tests/run_demo_builds.sh` validates the PlatformIO Arduino and PlatformIO ESP-IDF demo surfaces against the coherent local sibling repository topology rather than accidentally cloning stale dependency revisions.
+For VS Code ESP32 development, install and use **PIOArduino** rather than the legacy PlatformIO IDE extension. EDP public examples retain `platformio.ini` metadata because PIOArduino is PlatformIO-project compatible, but the ESP32 platform is selected from PIOArduino's current stable release:
 
-`tests/run_example_build.sh` independently builds the complete `examples/TemperatureMonitor` PlatformIO project against the same coherent sibling topology. The separate runner is intentional: the README example is a maintained consumer-facing project and must not silently rot merely because the equivalent local-broadcast demo still compiles.
+```ini
+[env:esp32dev]
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/stable/platform-espressif32.zip
+board = esp32dev
+framework = arduino
+build_unflags =
+    -std=gnu++11
+    -std=gnu++14
+    -std=gnu++17
+build_flags =
+    -std=gnu++20
+```
 
-Every logical demo additionally includes an Arduino IDE sketch under `demos/<name>/Arduino_IDE`.
+For ESP-IDF use the same `platform` and `board`, set `framework = espidf`, and retain the C++20 unflags/flags. The checked-in demo configurations intentionally follow the moving PIOArduino `stable` release rather than an obsolete platform pin.
 
-The authoritative project validation appliance is RPI400. GitHub Actions remains a maintained representative CI definition but does not replace RPI400 executable validation.
+## Repository dependency baseline
 
-For hardware validation, the local-broadcast/TemperatureMonitor path is suitable for the connected ESP32-WROOM-32 board because it requires no external peripheral beyond serial output.
+The current `event_v1` branch depends on prerequisite Event-integration APIs on `EDP-Memory/event_v1` and `EDP-Threading/event_v1`. All other mandatory EDP dependencies use their normal current baseline. Arduino IDE validation therefore uses the coherent sibling-repository workspace rather than independently resolving arbitrary versions.
+
+## Validation commands
+
+The mechanical V2 regression gate can be run independently:
+
+```text
+python3 tests/run_policy_checks.py
+```
+
+The normal host runner invokes that policy gate first, then executes positive, compile-fail and public-header contracts:
+
+```text
+python3 tests/run_tests.py
+```
+
+PIOArduino demo and complete-example surfaces are validated with:
+
+```text
+bash tests/run_demo_builds.sh
+bash tests/run_example_build.sh
+```
+
+Every logical demo also includes an Arduino IDE sketch under `demos/<name>/Arduino_IDE`. With `arduino-cli` and the ESP32 Arduino core installed, validate all three with:
+
+```text
+bash tests/run_arduino_ide_builds.sh
+```
+
+The Arduino runner defaults to FQBN `esp32:esp32:esp32`, supplies the sibling EDP libraries plus their `src` roots for nested EDP header resolution, and explicitly compiles C++ sources with `-std=gnu++20`.
+
+RPI400 is the authoritative executable-validation appliance. GitHub Actions remains representative CI and does not replace appliance validation or physical HIL where technically applicable.

@@ -137,38 +137,23 @@ namespace ESPressio::Event {
             Primitives::TypeList<TCallbackProviders...>
         > final {
 
-            public:
+            private:
 
-                // Public topology/provider metadata.
+                // Internally selected provider/runtime Types.
 
-                /// Application Composition Architecture Type used for all provider resolution.
-                using ArchitectureType = TArchitecture;
+                /// Uniquely selected Threading ordinary-mutex provider used internally for Event Runtime synchronization.
+                using SelectedMutexProvider = Composition::RuntimeMutexProvider<TArchitecture>;
 
-                /// Normalized Event plan owned by this Bootstrap.
-                using Plan = TPlan;
-
-                /// Application-owned Memory Runtime Type borrowed by Event.
-                using MemoryRuntime = TMemoryRuntime;
-
-                /// Application-owned Threading Runtime Type borrowed by Event.
-                using ThreadingRuntime = TThreadingRuntime;
-
-                /// Uniquely selected Threading ordinary-mutex provider for Event Runtime synchronization.
-                using MutexProvider = Composition::RuntimeMutexProvider<TArchitecture>;
-
-                /// Uniquely selected Threading topology provider used to validate Listener identities.
-                using ThreadingTopology = Composition::ThreadingTopologyProvider<TArchitecture>;
-
-                /// Exact callback provider TypeList derived from Observe declarations.
-                using CallbackProviders = Primitives::TypeList<TCallbackProviders...>;
+                /// Uniquely selected Threading topology provider used internally to validate Listener identities.
+                using SelectedThreadingTopology = Composition::ThreadingTopologyProvider<TArchitecture>;
 
                 /// Concrete Event Runtime Type bound to all selected providers.
-                using RuntimeType = Runtime<
+                using BoundRuntime = Runtime<
                     TPlan,
                     TArchitecture,
                     TMemoryRuntime,
                     TThreadingRuntime,
-                    MutexProvider,
+                    SelectedMutexProvider,
                     TCallbackProviders...
                 >;
 
@@ -179,7 +164,7 @@ namespace ESPressio::Event {
 
                 static_assert(
                     ListenerTopologyValid<
-                        ThreadingTopology,
+                        SelectedThreadingTopology,
                         typename TPlan::Listeners
                     >::value,
                     "Every Event Listener identity must resolve to one statically declared Dedicated Thread"
@@ -201,8 +186,6 @@ namespace ESPressio::Event {
                     "Every Event Observe relation requires one unique void OnEvent(const TEvent&) noexcept provider"
                 );
 
-            private:
-
                 // Borrowed owning-domain providers and owned Event Runtime.
 
                 /// Application-owned Memory Runtime; must outlive this Bootstrap.
@@ -212,12 +195,38 @@ namespace ESPressio::Event {
                 TThreadingRuntime* _threading;
 
                 /// Application-owned Event Runtime mutex provider; must outlive this Bootstrap.
-                MutexProvider* _mutex;
+                SelectedMutexProvider* _mutex;
 
                 /// Event-owned bounded Runtime retaining subscriptions/admission/delivery state.
-                RuntimeType _runtime;
+                BoundRuntime _runtime;
 
             public:
+
+                // Public topology/provider metadata.
+
+                /// Application Composition Architecture Type used for all provider resolution.
+                using ArchitectureType = TArchitecture;
+
+                /// Normalized Event plan owned by this Bootstrap.
+                using Plan = TPlan;
+
+                /// Application-owned Memory Runtime Type borrowed by Event.
+                using MemoryRuntime = TMemoryRuntime;
+
+                /// Application-owned Threading Runtime Type borrowed by Event.
+                using ThreadingRuntime = TThreadingRuntime;
+
+                /// Uniquely selected Threading ordinary-mutex provider for Event Runtime synchronization.
+                using MutexProvider = SelectedMutexProvider;
+
+                /// Uniquely selected Threading topology provider used to validate Listener identities.
+                using ThreadingTopology = SelectedThreadingTopology;
+
+                /// Exact callback provider TypeList derived from Observe declarations.
+                using CallbackProviders = Primitives::TypeList<TCallbackProviders...>;
+
+                /// Concrete Event Runtime Type bound to all selected providers.
+                using RuntimeType = BoundRuntime;
 
                 // Construction and stable ownership.
 

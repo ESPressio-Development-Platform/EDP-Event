@@ -4,6 +4,7 @@ struct BadHandler final : S::CF::Provider<
     ESPressio::Event::Composition::Domain,
     S::CF::Offers<S::CF::Offer<ESPressio::Event::Composition::ListenerCallback<S::ListenerA, S::TestEvent>>>
 > {
+    /// Deliberately returns the wrong Type and takes the Event by value.
     int OnEvent(S::TestEvent) noexcept { return 0; }
 };
 using EventComposition = S::CF::Composition<ESPressio::Event::Composition::Domain, BadHandler>;

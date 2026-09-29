@@ -3,10 +3,10 @@
 **Classification:** INTERNAL SEMANTIC HELPER  
 **Source:** [`src/event/Retention.hpp`](../src/event/Retention.hpp)
 
-## `NormalizedRetention`
+## `Detail::NormalizedRetention` — PRIVATE IMPLEMENTATION VALUE
 
-Structured normalized retention state. `Deadline` is the canonical absolute monotonic deadline (zero sentinel for UntilHandoff); `IsExpired` records whether the common dispatch precondition is already expired at normalization time.
+`Deadline` is the canonical absolute monotonic deadline. Zero is the structural sentinel for `UntilHandoff`. `Expired` records whether the request had already expired at normalization time.
 
-## `NormalizeRetention(TRetention)`
+## `Detail::NormalizeRetention<TRetention>(retention)` — INTERNAL HELPER
 
-Non-throwing helper shared by local and remote-scoped dispatch. `UntilHandoff` returns zero/nonexpired. `UntilDeadline` compares supplied deadline against canonical monotonic now. `ForDuration` resolves now plus positive duration to an absolute deadline with saturation at maximum timestamp and treats zero/nonpositive duration as expired. This ensures LocalOnly/RemoteOnly/LocalAndRemote share one expiry interpretation.
+`TRetention` must satisfy public `RetentionRequest`. The function is non-throwing, allocates nothing, and produces one `NormalizedRetention` shared by local and remote-scoped Dispatch paths. It uses canonical `Clock::MonotonicNow()`, handles zero/non-positive duration as expired, and saturates duration addition at the maximum representable timestamp.

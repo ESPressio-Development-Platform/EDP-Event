@@ -299,6 +299,16 @@ namespace ESPressio::Event {
 
         };
 
+
+        /// Result of one bounded internal Listener delivery attempt.
+        enum class DeliveryAttemptResult : std::uint8_t {
+            /// One pending occurrence was claimed and its callback completed.
+            Delivered = 0U,
+
+            /// No pending occurrence was available for the selected Listener/Event pair.
+            NoPendingOccurrence = 1U
+        };
+
     } // ESPressio::Event::Detail
 
 
@@ -805,9 +815,9 @@ namespace ESPressio::Event {
             /// Attempts one callback delivery for one Listener/Event pair without blocking.
             /// @tparam TThreadIdentity Listener Dedicated Thread identity.
             /// @tparam TEvent Observed Event payload Type.
-            /// @return True only when one occurrence was claimed and callback delivery completed.
+            /// @return Strongly typed delivery outcome for the selected Listener/Event pair.
             template<class TThreadIdentity, class TEvent>
-            bool TryDeliverOne() noexcept {
+            Detail::DeliveryAttemptResult TryDeliverOne() noexcept {
                 using EventRecord = Record<TEvent>;
                 using Index = typename EventRecord::OccurrenceIndex;
 
@@ -850,12 +860,12 @@ namespace ESPressio::Event {
 
                 if (!selected.IsValid()) {
                     Unlock();
-                    return false;
+                    return Detail::DeliveryAttemptResult::NoPendingOccurrence;
                 }
 
                 auto& record = RecordAt<TEvent>(selected);
 
-                if (!record.Claim(listener)) {
+                if (record.Claim(listener) != Detail::OccurrenceClaimResult::Claimed) {
                     InfrastructureFailure();
                 }
 
@@ -905,7 +915,7 @@ namespace ESPressio::Event {
                 }
 
                 Unlock();
-                return true;
+                return Detail::DeliveryAttemptResult::Delivered;
             }
 
             /// Attempts delivery for the observed Event Type at one runtime-selected ordinal.
@@ -913,13 +923,13 @@ namespace ESPressio::Event {
             /// @tparam TIndex Current compile-time observed-Type ordinal in the recursive dispatcher.
             /// @param ordinal Runtime ordinal selected by the Listener round-robin scan.
             template<class TThreadIdentity, std::size_t TIndex = 0U>
-            bool TryDeliverOrdinal(
+            Detail::DeliveryAttemptResult TryDeliverOrdinal(
                 std::size_t ordinal
             ) noexcept {
                 using Types = typename TPlan::template ObservedEventTypes<TThreadIdentity>;
 
                 if constexpr (TIndex >= Types::Count) {
-                    return false;
+                    return Detail::DeliveryAttemptResult::NoPendingOccurrence;
                 } else {
                     if (ordinal == TIndex) {
                         using TEvent = typename Detail::TypeAt<Types, TIndex>::Type;
@@ -1333,7 +1343,7 @@ namespace ESPressio::Event {
 
                 return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
                     local,
-                    std::move(remote)
+                    Memory::OwnershipTransfer::Move(remote)
                 );
             }
 
@@ -1424,7 +1434,10 @@ namespace ESPressio::Event {
                     ) {
                         const auto ordinal = (cursor + scan) % typeCount;
 
-                        if (TryDeliverOrdinal<TThreadIdentity>(ordinal)) {
+                        if (
+                            TryDeliverOrdinal<TThreadIdentity>(ordinal) ==
+                            Detail::DeliveryAttemptResult::Delivered
+                        ) {
                             ++result.Delivered;
                             cursor = (ordinal + 1U) % typeCount;
                             SetCursor<TThreadIdentity>(cursor);

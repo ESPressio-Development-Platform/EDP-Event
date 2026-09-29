@@ -23,3 +23,5 @@ Event never interprets the concrete Transport/provider result. `RemoteDispatchAt
 For LocalAndRemote, the bounded outbound call occurs while the Event Runtime's linearization mutex remains held so concurrent same-Type scoped Dispatch cannot reverse the Event-level handoff opportunity order. The concrete outbound operation must therefore be bounded and must not synchronously re-enter the same Event Runtime while that protected handoff is active.
 
 For RemoteOnly, where no local Runtime need exist, concurrent same-Type serialization is the responsibility of the external binding/integration implementation.
+
+`RemoteDispatchAttempt::ResultIfPresent()` exposes the provider result only when present and returns `nullptr` for a skipped attempt.

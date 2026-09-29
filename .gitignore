@@ -452,3 +452,6 @@ ehthumbs_vista.db
 [Dd]esktop.ini
 $RECYCLE.BIN/
 *.lnk
+
+# Arduino CLI build output used by Arduino IDE validation
+**/.arduino-build/

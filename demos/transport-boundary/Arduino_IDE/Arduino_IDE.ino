@@ -423,10 +423,13 @@ namespace Demo {
             transport
         );
 
+        const auto* bothRemoteResult = both.Remote().ResultIfPresent();
+
         if (
             both.Local() != Event::DispatchResult::Accepted ||
             !both.Remote().WasAttempted() ||
-            both.Remote().Result() != TransportResult::Accepted ||
+            bothRemoteResult == nullptr ||
+            *bothRemoteResult != TransportResult::Accepted ||
             transport.Calls.load(
                 std::memory_order_relaxed
             ) != 1U ||
@@ -471,9 +474,12 @@ namespace Demo {
             transport
         );
 
+        const auto* remoteOnlyResult = remoteOnly.ResultIfPresent();
+
         if (
             !remoteOnly.WasAttempted() ||
-            remoteOnly.Result() != TransportResult::Accepted ||
+            remoteOnlyResult == nullptr ||
+            *remoteOnlyResult != TransportResult::Accepted ||
             transport.Calls.load(
                 std::memory_order_relaxed
             ) != 2U ||

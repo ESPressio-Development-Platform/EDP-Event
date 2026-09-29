@@ -4,7 +4,8 @@
 #include <ESPressio_Event.hpp>
 #include "../support/EventTestSupport.hpp"
 
-namespace {
+namespace LayoutTest {
+
     namespace Event = ESPressio::Event;
     namespace Primitives = ESPressio::Primitives;
     namespace BoundedTopology = ESPressio::BoundedTopology;
@@ -55,6 +56,7 @@ namespace {
         2U
     >;
     static_assert(TwoListenerSet::StorageBytes == 1U);
-}
+
+} // LayoutTest
 
 int main() { return 0; }

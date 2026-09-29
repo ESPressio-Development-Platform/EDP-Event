@@ -7,6 +7,7 @@
 #include <utility>
 
 #include <ESPressio_BoundedTopology.hpp>
+#include <ESPressio_Memory.hpp>
 
 #include "EventTypes.hpp"
 #include "Planner.hpp"
@@ -203,6 +204,16 @@ namespace ESPressio::Event {
 
         };
 
+
+        /// Result of attempting to claim one pending Listener interest from an Event occurrence.
+        enum class OccurrenceClaimResult : std::uint8_t {
+            /// The Listener interest was pending and is now held as an active callback borrow.
+            Claimed = 0U,
+
+            /// The Listener had no pending interest in this occurrence.
+            NotPending = 1U
+        };
+
     } // ESPressio::Event::Detail
 
 
@@ -222,6 +233,56 @@ namespace ESPressio::Event {
         >,
         private Detail::BorrowStorage<TPlan::template EligibleListenerCount<TEvent>> {
 
+        private:
+
+            // Planner-derived internal metadata.
+
+            /// Local deployment declaration defining this record's hard policy/resource choices.
+            using DeploymentType = typename TPlan::template Deployment<TEvent>;
+
+            /// Exact simultaneous live occurrence capacity used by internal compact identities.
+            static constexpr std::size_t MaximumInstancesValue = DeploymentType::MaximumInstances;
+
+            /// Exact number of statically eligible Listeners used by internal compact identities.
+            static constexpr std::size_t ListenerCountValue = TPlan::template EligibleListenerCount<TEvent>;
+
+            /// Strong compact physical occurrence-slot identity used internally.
+            using OccurrenceIndexType = BoundedTopology::BoundedIndex<
+                Detail::OccurrenceIndexSpace<TPlan, TEvent>,
+                MaximumInstancesValue
+            >;
+
+            /// Strong compact Type-local Listener identity used internally.
+            using ListenerIndexType = BoundedTopology::BoundedIndex<
+                Detail::ListenerIndexSpace<TPlan, TEvent>,
+                ListenerCountValue
+            >;
+
+            /// Compact one-bit-per-Listener pending-recipient set used internally.
+            using ListenerSetType = BoundedTopology::BoundedIndexSet<
+                Detail::ListenerIndexSpace<TPlan, TEvent>,
+                ListenerCountValue
+            >;
+
+            // Conditional storage-base aliases.
+
+            /// Expiry storage selected from local retention capability.
+            using ExpiryBase = Detail::ExpiryStorage<TPlan::template SupportsTimedRetention<TEvent>>;
+
+            /// Queue-link storage selected from admission shape.
+            using QueueBase = Detail::QueueLinkStorage<OccurrenceIndexType, TPlan::template IsQueue<TEvent>>;
+
+            /// Active-borrow storage selected from Listener cardinality.
+            using BorrowBase = Detail::BorrowStorage<ListenerCountValue>;
+
+            // Authoritative occurrence payload and pending-recipient state.
+
+            /// Immutable-by-contract Event payload retained for the lifetime of this occurrence.
+            TEvent _event;
+
+            /// Snapshot of Listener interests still awaiting handoff; zero-capacity form occupies no unique state.
+            [[no_unique_address]] ListenerSetType _pending{};
+
         public:
 
             // Planner-derived public metadata.
@@ -230,13 +291,13 @@ namespace ESPressio::Event {
             using Event = TEvent;
 
             /// Local deployment declaration defining this record's hard policy/resource choices.
-            using Deployment = typename TPlan::template Deployment<TEvent>;
+            using Deployment = DeploymentType;
 
             /// Exact simultaneous live occurrence capacity for this Event Type.
-            static constexpr std::size_t MaximumInstances = Deployment::MaximumInstances;
+            static constexpr std::size_t MaximumInstances = MaximumInstancesValue;
 
             /// Exact number of statically eligible Listeners for this Event Type.
-            static constexpr std::size_t ListenerCount = TPlan::template EligibleListenerCount<TEvent>;
+            static constexpr std::size_t ListenerCount = ListenerCountValue;
 
             /// Indicates whether this record physically retains a timed deadline.
             static constexpr bool Timed = TPlan::template SupportsTimedRetention<TEvent>;
@@ -245,45 +306,13 @@ namespace ESPressio::Event {
             static constexpr bool Queued = TPlan::template IsQueue<TEvent>;
 
             /// Strong compact physical occurrence-slot identity.
-            using OccurrenceIndex = BoundedTopology::BoundedIndex<
-                Detail::OccurrenceIndexSpace<TPlan, TEvent>,
-                MaximumInstances
-            >;
+            using OccurrenceIndex = OccurrenceIndexType;
 
             /// Strong compact Type-local Listener identity.
-            using ListenerIndex = BoundedTopology::BoundedIndex<
-                Detail::ListenerIndexSpace<TPlan, TEvent>,
-                ListenerCount
-            >;
+            using ListenerIndex = ListenerIndexType;
 
             /// Compact one-bit-per-Listener pending-recipient set.
-            using ListenerSet = BoundedTopology::BoundedIndexSet<
-                Detail::ListenerIndexSpace<TPlan, TEvent>,
-                ListenerCount
-            >;
-
-        private:
-
-            // Conditional storage-base aliases.
-
-            /// Expiry storage selected from local retention capability.
-            using ExpiryBase = Detail::ExpiryStorage<Timed>;
-
-            /// Queue-link storage selected from admission shape.
-            using QueueBase = Detail::QueueLinkStorage<OccurrenceIndex, Queued>;
-
-            /// Active-borrow storage selected from Listener cardinality.
-            using BorrowBase = Detail::BorrowStorage<ListenerCount>;
-
-            // Authoritative occurrence payload and pending-recipient state.
-
-            /// Immutable-by-contract Event payload retained for the lifetime of this occurrence.
-            TEvent _event;
-
-            /// Snapshot of Listener interests still awaiting handoff; zero-capacity form occupies no unique state.
-            [[no_unique_address]] ListenerSet _pending{};
-
-        public:
+            using ListenerSet = ListenerSetType;
 
             // Construction and lifetime.
 
@@ -337,9 +366,12 @@ namespace ESPressio::Event {
                 const ListenerSet& pending,
                 MonotonicTimestamp deadline
             ) noexcept {
-                _event.~TEvent();
-                ::new (static_cast<void*>(&_event)) TEvent(
-                    std::forward<TEventArgument>(event)
+                Memory::ObjectLifetime::Destroy(_event);
+                static_cast<void>(
+                    Memory::ObjectLifetime::Construct<TEvent>(
+                        static_cast<void*>(&_event),
+                        std::forward<TEventArgument>(event)
+                    )
                 );
                 _pending = pending;
                 ExpiryBase::SetDeadline(deadline);
@@ -385,19 +417,19 @@ namespace ESPressio::Event {
 
             /// Claims this occurrence for one pending Listener and establishes an active borrow.
             /// @param listener Type-local Listener identity attempting the claim.
-            /// @return True only when this Listener had pending interest and the claim was established.
-            [[nodiscard]] bool Claim(
+            /// @return Strongly typed claim outcome distinguishing successful claim from absent interest.
+            [[nodiscard]] Detail::OccurrenceClaimResult Claim(
                 ListenerIndex listener
             ) noexcept {
                 if (!_pending.IsSet(listener)) {
-                    return false;
+                    return Detail::OccurrenceClaimResult::NotPending;
                 }
 
                 static_cast<void>(
                     _pending.Clear(listener)
                 );
                 BorrowBase::Increment();
-                return true;
+                return Detail::OccurrenceClaimResult::Claimed;
             }
 
             /// Releases one active callback borrow after callback return.

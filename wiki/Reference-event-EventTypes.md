@@ -1,54 +1,64 @@
 # Reference — `src/event/EventTypes.hpp`
 
-**Classification:** PUBLIC VALUE/RESULT API  
 **Source:** [`src/event/EventTypes.hpp`](../src/event/EventTypes.hpp)
 
-## Aliases
+This header owns Event's public value, scope, retention-request and result vocabulary. It also owns the structured result Types used to preserve external remote-domain outcomes without interpreting them.
 
-`Duration` and `MonotonicTimestamp` expose the canonical EDP-Clock value Types used by Event retention.
+## Canonical Clock aliases — PUBLIC API
 
-## Result enums
+- `Duration` aliases `Clock::Duration`; all relative Event retention uses this canonical Clock representation.
+- `MonotonicTimestamp` aliases `Clock::MonotonicTimestamp`; all absolute Event deadlines use this canonical monotonic representation.
 
-### `DispatchResult`
-- `Accepted` — local admission committed, including valid zero-recipient elision.
-- `NoCapacity` — required bounded local physical/pending capacity unavailable.
-- `Expired` — retention invalid at the common precondition; no local occurrence admitted.
+## Operation result enums — PUBLIC API
 
-### `SubscribeResult`
-- `Subscribed` — previously inactive planned relation activated.
-- `AlreadySubscribed` — relation was already active; state unchanged.
+- `DispatchResult`: `Accepted` means local admission committed; `NoCapacity` means bounded local capacity was unavailable; `Expired` means the common retention precondition had already expired.
+- `SubscribeResult`: `Subscribed` means an inactive planned relation became active; `AlreadySubscribed` means it was already active.
+- `UnsubscribeResult`: `Unsubscribed` means an active relation became inactive; `NotSubscribed` means it was already inactive.
+- `InitializationResult`: `Initialized`, `AlreadyInitialized`, and `ProviderFailure` expose Runtime initialization outcomes.
+- `RemoteDispatchAttemptState`: `SkippedExpired` means Event did not call the remote operation because the common expiry gate failed; `Attempted` means the remote operation ran exactly once and produced a retained native result.
 
-### `UnsubscribeResult`
-- `Unsubscribed` — active relation disabled and pending interests cancelled where applicable.
-- `NotSubscribed` — relation already inactive.
+## Execution-domain scope vocabulary — PUBLIC API
 
-### `InitializationResult`
-- `Initialized` — Event Runtime initialized successfully.
-- `AlreadyInitialized` — initialization had already completed.
-- `ProviderFailure` — required external runtime precondition/provider unavailable (for example Memory not initialized or timed deployment without bound monotonic Clock).
+`LocalOnly`, `RemoteOnly`, and `LocalAndRemote` are zero-state control tags. `ExecutionDomainScope<TScope>` accepts exactly those Types.
 
-## Execution scope Types
+## Retention request vocabulary — PUBLIC API
 
-`LocalOnly`, `RemoteOnly`, `LocalAndRemote` are zero-state dispatch control tags. `ExecutionDomainScope<T>` recognizes them. Scope is control metadata only and is not Event payload/wire identity.
+- `UntilHandoff` is a zero-state request retaining local work until pending handoff completes/cancels.
+- `ForDuration::Value` owns the requested canonical `Duration` relative to normalization time.
+- `UntilDeadline::Value` owns an absolute canonical `MonotonicTimestamp` deadline.
+- `RetentionRequest<TRetention>` accepts exactly `UntilHandoff`, `ForDuration`, and `UntilDeadline`.
 
-## Retention request Types
+## `RemoteDispatchAttempt<TRemoteResult>` — PUBLIC STRUCTURED RESULT
 
-`UntilHandoff` is zero-state. `ForDuration` owns one canonical `Duration` as member `Value`. `UntilDeadline` owns one canonical `MonotonicTimestamp` as `Value`. `RetentionRequest<T>` recognizes exactly these request Types.
+`TRemoteResult` is the provider-defined, non-void, nothrow-move-constructible and nothrow-destructible native result returned by the external remote operation. Event preserves this Type without translating provider semantics.
 
-## `RemoteDispatchAttempt<TRemoteResult>`
+### Private implementation state
 
-Move-only structured result preserving the external remote provider's native result without Event interpreting it. Template parameter is the non-void nothrow-movable/destructible provider result Type.
+- `_state` is the authoritative presence state. It is `SkippedExpired` when no result object exists and `Attempted` while `Storage::Result` is live.
+- `Storage` is a private union. `Empty` is active in the absent state; `Result` is active only in `Attempted` state. `Storage()` activates `Empty`; `~Storage()` deliberately leaves active-result destruction to the wrapper.
+- Explicit result construction, move construction and destruction pass through `EDP-Memory::ObjectLifetime`.
 
-Nested `State` values:
-- `SkippedExpired` — Event did not invoke remote handoff because the common expiry precondition failed.
-- `Attempted` — remote operation invoked exactly once and `Result()` contains its native result.
+### Public Type and lifecycle surface
 
-Private union `Storage` retains either an inactive byte or the remote result. `_state` is authoritative presence state. Move construction transfers the remote result and clears the source to SkippedExpired. `WasAttempted()` / `WasSkippedExpired()` are predicates. `Result()` is valid only in Attempted state; callers must inspect state first.
+- `State` aliases `RemoteDispatchAttemptState`.
+- The default constructor creates `SkippedExpired` with no result payload.
+- `RemoteDispatchAttempt(TRemoteResult)` establishes `Attempted` and transfers the provider result through EDP-Memory.
+- Copy construction/assignment are deleted.
+- Move construction transfers any live provider result through EDP-Memory and leaves the source `SkippedExpired`.
+- Move assignment is deleted.
+- The destructor destroys a live provider result through EDP-Memory only in `Attempted` state.
 
-## `LocalAndRemoteDispatchResult<TLocalResult,TRemoteResult>`
+### State and payload access
 
-Move-only pair of independent domain outcomes. `_local` is the local semantic result; `_remote` is `RemoteDispatchAttempt<TRemoteResult>`. `Local()` / `Remote()` expose mutable/const references. The structure makes no aggregate success claim and encodes no rollback relationship.
+- `GetState()` returns the authoritative `State`.
+- `WasAttempted()` and `WasSkippedExpired()` are Boolean predicates over that state.
+- mutable/const `ResultIfPresent()` return a pointer to the provider result only in `Attempted` state and `nullptr` otherwise. This prevents a caller from obtaining a reference to an inactive union member.
 
-## `DrainResult`
+## `LocalAndRemoteDispatchResult<TLocalResult,TRemoteResult>` — PUBLIC STRUCTURED RESULT
 
-`Delivered` is the number of callbacks completed by one bounded Drain call. `WorkRemaining` states whether that Listener still has pending Event work after the budget was exhausted/completed.
+Private member `_local` owns the local outcome and `_remote` owns the remote attempt wrapper. Construction and move construction transfer both values through EDP-Memory ownership-transfer semantics. Copy operations and move assignment are deleted. mutable/const `Local()` expose the local result and mutable/const `Remote()` expose the remote wrapper.
+
+## `DrainResult` — PUBLIC STRUCTURED RESULT
+
+- `Delivered` is the exact number of callbacks completed by one bounded `Drain` call.
+- `WorkRemaining` states whether that Listener still has pending Event work after the bounded call returns.

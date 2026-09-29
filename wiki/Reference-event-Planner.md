@@ -19,7 +19,7 @@ The Planner converts opaque Event-family declarations supplied through `EDP-Prim
 
 `FindDeployment<TDeployments,TEvent>` resolves the unique local deployment declaration for one Event Type.
 
-`SharedPendingValue<TList>` maps absence to zero or returns the sole SharedPending capacity. `MaximumUsefulShared<TDeployments>` computes the compile-time maximum Queue overflow that could ever be consumed so provably useless SharedPending declarations can be rejected.
+`SharedPendingValue<TList>` maps absence to zero or returns the sole SharedPending capacity. `MaximumUsefulShared<TDeployments>` computes the compile-time maximum Queue overflow that could ever be consumed. `MaxInstancesSum<TList>` folds exact `MaximumInstances` across every deployment.
 
 `HasDuplicateEventDeployments`, Primitives duplicate-Type helpers and observation duplicate validation reject ambiguous family topology. `ValidateObservedDeployed` proves every observed Event is locally deployed.
 
@@ -33,7 +33,7 @@ The Planner converts opaque Event-family declarations supplied through `EDP-Prim
 
 `OccurrenceInstances<TEvent>`, `DedicatedPendingSlots<TEvent>`, `EligibleListeners<TEvent>`, `SharedPendingSlots`, and `ListenerCount` are semantic resource-dimension tags.
 
-`MakeResourcePlan<TDeployList,TObserveList,TShared>` expands each deployment into decomposed `Primitives::ResourceRequirement` entries plus family-wide Shared Pending and unique Listener count. The plan records semantic dimensions rather than opaque byte totals.
+`MakeResourcePlan<TDeployList,TObserveList,TShared>` expands each deployment into decomposed `Primitives::ResourceRequirement` entries plus family-wide Shared Pending and unique Listener count. `OccurrenceRequirement<TDeployment>`, `PendingRequirement<TDeployment>`, and `ListenerRequirement<TDeployment>` map physical, logical-pending, and Listener dimensions. Nested `Expand<TList>` performs the variadic expansion and `Type` exposes the complete plan.
 
 # `Detail::NormalizedEventPlan<TDeclarations>`
 
@@ -76,3 +76,7 @@ Static assertions enforce unique deployment/Observe/TypeIdentifier contracts, on
 **Classification:** PUBLIC FAMILY PLANNER.**
 
 `MakePlan<TFamily,TDeclarations>` validates that `TFamily` is Event::Family, constructs `EventPlan`, and emits `Primitives::FamilyPlan<Family,RuntimeProvider<EventPlan>,PrimitiveTypes,Resources>`. `Plan<TFamily,TDeclarations>` is the canonical alias consumed by EDP-Primitives.
+
+## Template-parameter coverage
+
+`TAdmission` and `TRetention` are admission/retention policy Types inspected by planner traits. `TThreadIdentity` is a Listener Dedicated Thread identity. `TFirst` and `Tail` are the head/remainder elements used by recursive compile-time TypeList helpers. `TSharedPending` is the optional family-wide SharedPending declaration. `TDeployedEvents` is the normalized deployed Event TypeList used by resource and validation folds. None of these template parameters create runtime state.

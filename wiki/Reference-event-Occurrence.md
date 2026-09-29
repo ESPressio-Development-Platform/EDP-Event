@@ -31,14 +31,13 @@ Private EBO base controlling intrusive FIFO linkage.
 - nonqueued specialization retains no state;
 - queued specialization retains one `Next` strong occurrence index, default Invalid, used by `BoundedTopology::IntrusiveQueue`.
 
-## `Detail::BorrowStorage<TListeners,THasListeners>`
+## `Detail::BorrowStorage<TListeners,THasListeners>` — PRIVATE IMPLEMENTATION
 
-Private EBO base controlling active callback borrow count.
+Private EBO base controlling active callback borrow count. The zero-listener specialization retains no state; the positive-listener specialization aliases minimum-width `Storage`, retains authoritative member `Active`, returns it through `Count()`, increments after a successful claim, and decrements after callback return.
 
-- zero-listener form retains no state and reports zero;
-- positive-listener form retains `Active` using minimum `CountStorage<TListeners>`. `Increment()` occurs on Listener claim; `Decrement()` occurs after callback return.
+## `Detail::OccurrenceClaimResult` — PRIVATE OPERATION RESULT
 
-The count is bounded by Listener cardinality because each Listener can own at most one active claim against a given occurrence recipient bit.
+Strong result for `OccurrenceRecord::Claim`. `Claimed` means the pending bit was consumed and an active callback borrow established; `NotPending` means that Listener had no pending interest and no state changed.
 
 # `OccurrenceRecord<TPlan,TEvent>`
 
@@ -59,7 +58,7 @@ Nested metadata:
 - `ListenerIndex` — strong compact Type-local Listener identity;
 - `ListenerSet` — one-bit-per-Listener set used for pending recipients.
 
-Private bases `ExpiryBase`, `QueueBase`, `BorrowBase` provide zero-cost conditional state. Private members are `_event` (immutable-by-contract payload once admitted) and `_pending` (authoritative pending recipient set).
+Private compile-time aliases `DeploymentType`, `MaximumInstancesValue`, `ListenerCountValue`, `OccurrenceIndexType`, `ListenerIndexType`, and `ListenerSetType` derive exact internal layout vocabulary. Private bases `ExpiryBase`, `QueueBase`, and `BorrowBase` select conditional deadline/Queue/borrow state. `_event` is the retained payload and `_pending` is the authoritative pending-recipient snapshot.
 
 ## Construction
 
@@ -67,7 +66,7 @@ The templated constructor materializes the payload, recipient snapshot and norma
 
 ## `ReplaceUnborrowed(...)`
 
-NewestOnly-only replacement path used when the old pending occurrence has no active borrow. Reconstructs/replaces payload plus recipient/deadline state without allocating another physical slot. Preconditions are enforced by Runtime: occurrence is not actively borrowed and the incoming construction path is nonthrowing.
+NewestOnly-only replacement path used when the old pending occurrence has no active borrow. It destroys and reconstructs the payload in the existing physical slot exclusively through `EDP-Memory::ObjectLifetime`, then replaces recipient/deadline state.
 
 ## Payload/recipient accessors
 
@@ -75,7 +74,7 @@ NewestOnly-only replacement path used when the old pending occurrence has no act
 
 ## Borrow operations
 
-`ActiveBorrowCount()` reads current active callback borrowers. `Claim(listener)` clears that Listener pending bit and increments the borrow count only when the Listener actually had pending interest; false means no claim occurred. `ReleaseBorrow()` decrements after callback completion.
+`ActiveBorrowCount()` reads current active callback borrowers. `Claim(listener)` is a state-changing operation returning `Detail::OccurrenceClaimResult`; it clears that Listener pending bit and increments the borrow count only for `Claimed`. `ReleaseBorrow()` decrements after callback completion.
 
 ## Expiry
 
@@ -84,3 +83,7 @@ NewestOnly-only replacement path used when the old pending occurrence has no act
 ## Intrusive Queue contract
 
 For Queue deployments, `QueueNext()` and `SetQueueNext(index)` satisfy the record contract required by `BoundedTopology::IntrusiveQueue`. These methods are unavailable for NewestOnly via `requires Queued`.
+
+## Template-parameter coverage
+
+`TEventArgument` is the forwarding payload argument accepted by construction/replacement helpers; it is constrained by the selected nothrow construction path and never retained as a reference. The apparent `noexcept` token in mechanical scans is a function qualifier, not a declaration.

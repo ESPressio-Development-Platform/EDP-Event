@@ -66,6 +66,14 @@ def run(command: list[str], expect_success: bool) -> bool:
 
 
 def main() -> int:
+    policy_checks = subprocess.run(
+        [sys.executable, str(ROOT / "tests" / "run_policy_checks.py")],
+        cwd=ROOT,
+        check=False,
+    )
+    if policy_checks.returncode != 0:
+        return policy_checks.returncode
+
     for include in INCLUDES:
         if not include.is_dir():
             print(f"ERROR: required include root missing: {include}", file=sys.stderr)

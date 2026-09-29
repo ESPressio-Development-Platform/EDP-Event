@@ -36,6 +36,7 @@ The core vocabulary is:
 - [Concurrency and ISR Boundary](./docs/CONCURRENCY-AND-ISR.MD) — the one Event mutex, callback reentrancy, advisory wake and ordinary-context-only rule.
 - [Transport Contract](./docs/TRANSPORT-CONTRACT.MD) — Local/Remote scopes, inbound handoff and provider-result preservation.
 - [Resource Planning](./docs/RESOURCE-PLANNING.MD) — exact physical pools, pending entitlements and compile-away representation.
+- [Building and Validation](./docs/BUILDING.MD) — C++20, PIOArduino setup, dependency baseline and executable validation commands.
 - [Dependency graph](./DEPENDENCY_GRAPH.MD) — mandatory dependency directions and deliberate non-dependencies.
 
 ## Complete example — TemperatureMonitor
@@ -303,7 +304,7 @@ memory.TearDown();
 
 ### Build the complete example
 
-With PlatformIO:
+With PIOArduino's PlatformIO-compatible CLI:
 
 ```text
 cd examples/TemperatureMonitor
@@ -343,7 +344,7 @@ The repository host runner validates planner/runtime/layout behavior, compile-fa
 python3 tests/run_tests.py
 ```
 
-The PlatformIO demo matrix is:
+The PIOArduino demo matrix is:
 
 ```text
 bash tests/run_demo_builds.sh
@@ -370,10 +371,10 @@ EDP-Event
 └── EDP-BoundedTypes
 ```
 
-On the current `event_v1` development branch, `EDP-Memory` and `EDP-Threading` must also be consumed from their `event_v1` branches because the compact indexed-pool and Dedicated-Thread wake/mutex prerequisites have not yet landed on those repositories' `main` branches. `library.json`, the PlatformIO demos and `examples/TemperatureMonitor` pin those prerequisite refs explicitly; Arduino IDE users must check out the same branches manually.
+On the current `event_v1` development branch, `EDP-Memory` and `EDP-Threading` must also be consumed from their `event_v1` branches because the compact indexed-pool and Dedicated-Thread wake/mutex prerequisites have not yet landed on those repositories' `main` branches. `library.json`, the PIOArduino demo projects and `examples/TemperatureMonitor` pin those prerequisite refs explicitly; Arduino IDE users must check out the same branches manually.
 
 See [`DEPENDENCY_GRAPH.MD`](./DEPENDENCY_GRAPH.MD) for ownership and direction details.
 
 ## C++ language baseline
 
-ESPressio uses C++20. PlatformIO-compatible ESP32 examples/demos use the maintained PIOArduino toolchain baseline used by the rest of the EDP validation estate.
+ESPressio uses C++20. For VS Code ESP32 development, use PIOArduino rather than the legacy PlatformIO IDE extension; checked-in project files select PIOArduino `stable` and explicitly enable `-std=gnu++20`. See [Building and Validation](./docs/BUILDING.MD) for the exact configuration and validation commands.

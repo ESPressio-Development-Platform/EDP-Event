@@ -64,11 +64,11 @@ Because Event may outlive the producer until every Listener callback has returne
 ```cpp
 namespace ESPressio::Bounded {
 
-template<>
-struct MemoryBoundedTraits<Demo::TemperatureChanged> :
-    MemoryBoundedValueDeclaration<false, std::int16_t> {};
+    template<>
+    struct MemoryBoundedTraits<Demo::TemperatureChanged> :
+        MemoryBoundedValueDeclaration<false, std::int16_t> {};
 
-}
+} // ESPressio::Bounded
 ```
 
 The `false` states that the value has no external lifetime dependency.
@@ -140,16 +140,25 @@ using ThreadingTopology = ESPressio::Threading::ThreadingTopology<
 The Thread is deliberately multi-purpose. Its loop drains a bounded amount of Event work, can service any other application responsibilities, and then waits indefinitely when no immediate work remains:
 
 ```cpp
-void operator ()(ESPressio::Threading::ThreadContext& context) noexcept {
+void operator ()(
+    ESPressio::Threading::ThreadContext& context
+) noexcept {
     while (!context.IsStopRequested()) {
         if (Control->Runtime != nullptr) {
-            const auto drained = Control->Drain(Control->Runtime, 8U);
+            const auto drained = Control->Drain(
+                Control->Runtime,
+                8U
+            );
+
             if (drained.WorkRemaining) {
                 continue;
             }
         }
 
-        if (context.Wait() != ESPressio::Threading::ThreadWaitResult::Woken) {
+        if (
+            context.Wait() !=
+            ESPressio::Threading::ThreadWaitResult::Woken
+        ) {
             return;
         }
     }
@@ -174,9 +183,17 @@ struct TemperatureHandler final : ESPressio::System::CompositionFramework::Provi
         >
     >
 > {
-    void OnEvent(const TemperatureChanged& event) noexcept {
-        Last.store(event.CelsiusX100, std::memory_order_relaxed);
-        Count.fetch_add(1U, std::memory_order_release);
+    void OnEvent(
+        const TemperatureChanged& event
+    ) noexcept {
+        Last.store(
+            event.CelsiusX100,
+            std::memory_order_relaxed
+        );
+        Count.fetch_add(
+            1U,
+            std::memory_order_release
+        );
     }
 };
 ```
@@ -224,7 +241,12 @@ using EventBootstrap = ESPressio::Event::Bootstrap<
 
 EventMutex eventMutex;
 TemperatureHandler handler;
-EventBootstrap eventBootstrap(memory, threading, eventMutex, handler);
+EventBootstrap eventBootstrap(
+    memory,
+    threading,
+    eventMutex,
+    handler
+);
 
 if (eventBootstrap.Initialize() != ESPressio::Event::InitializationResult::Initialized) {
     // Bootstrap failed.
@@ -327,6 +349,12 @@ The PlatformIO demo matrix is:
 bash tests/run_demo_builds.sh
 ```
 
+The complete README example is validated independently with:
+
+```text
+bash tests/run_example_build.sh
+```
+
 The implementation is ordinary-context only; no Event Runtime API is ISR-safe.
 
 ## Dependencies
@@ -341,6 +369,8 @@ EDP-Event
 ├── EDP-BoundedTopology
 └── EDP-BoundedTypes
 ```
+
+On the current `event_v1` development branch, `EDP-Memory` and `EDP-Threading` must also be consumed from their `event_v1` branches because the compact indexed-pool and Dedicated-Thread wake/mutex prerequisites have not yet landed on those repositories' `main` branches. `library.json`, the PlatformIO demos and `examples/TemperatureMonitor` pin those prerequisite refs explicitly; Arduino IDE users must check out the same branches manually.
 
 See [`DEPENDENCY_GRAPH.MD`](./DEPENDENCY_GRAPH.MD) for ownership and direction details.
 

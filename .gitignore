@@ -433,3 +433,22 @@ FodyWeavers.xsd
 
 # Coherent-local-source temporary PlatformIO configs
 **/platformio.local.*.ini
+
+# macOS filesystem metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.TemporaryItems
+
+# Windows filesystem metadata
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk

@@ -12,11 +12,11 @@ Consumed for `Family`, `Topology`, declaration filtering, `FamilyPlan`, `Resourc
 
 ## EDP-Memory
 
-Consumed for exact physical occurrence storage. `OccurrencePoolSpec<TPlan,TEvent>` generates a dedicated-only `ObjectPoolSpec` over the planner-generated occurrence record. Runtime requires exactly matching capacity and uses compact dedicated indices for acquire/address/release.
+Consumed for exact physical occurrence storage. `OccurrencePoolSpec<TPlan,TEvent>` generates a dedicated-only `ObjectPoolSpec` over the planner-generated occurrence record. Runtime requires exactly matching capacity and uses compact dedicated indices for acquire/address/release. The current EDP-Event `event_v1` package therefore pins EDP-Memory to `event_v1`, because this compact indexed-pool seam is not yet available on EDP-Memory `main`.
 
 ## EDP-Threading
 
-Consumed for Dedicated Thread topology/handles/wake semantics and `OrdinaryMutex<RuntimeMutexIdentity>`. Event validates every Listener identity resolves to a declared Dedicated Thread and signals that Thread's existing managed wake path.
+Consumed for Dedicated Thread topology/handles/wake semantics and `OrdinaryMutex<RuntimeMutexIdentity>`. Event validates every Listener identity resolves to a declared Dedicated Thread and signals that Thread's existing managed wake path. The current EDP-Event `event_v1` package pins EDP-Threading to `event_v1`, because the public Dedicated-Thread wake/wait and keyed ordinary-mutex seam is not yet available on EDP-Threading `main`.
 
 ## EDP-Clock
 

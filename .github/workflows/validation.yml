@@ -103,3 +103,5 @@ jobs:
         run: python -m pip install --upgrade platformio
       - name: Build current-branch Event demos
         run: bash EDP-Event/tests/run_demo_builds.sh
+      - name: Build complete TemperatureMonitor example
+        run: bash EDP-Event/tests/run_example_build.sh

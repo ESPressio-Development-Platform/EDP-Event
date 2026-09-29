@@ -14,7 +14,7 @@ Run `bash tests/run_demo_builds.sh` from the managed sibling-repository workspac
 
 Three logical demos each provide Arduino IDE, PlatformIO Arduino and PlatformIO ESP-IDF projects: `local-broadcast`, `newest-only-retention`, `transport-boundary`.
 
-The `examples/TemperatureMonitor` PlatformIO project is the complete example documented step-by-step in the root README.
+The `examples/TemperatureMonitor` PlatformIO project is the complete example documented step-by-step in the root README. Run `bash tests/run_example_build.sh` to validate that consumer-facing project independently against the same coherent sibling-source topology; the separate gate prevents the example from silently drifting merely because the equivalent local-broadcast demo remains buildable.
 
 ## Validation authority
 

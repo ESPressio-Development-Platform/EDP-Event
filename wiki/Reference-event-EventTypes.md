@@ -19,7 +19,7 @@ This header owns Event's public value, scope, retention-request and result vocab
 
 ## Execution-domain scope vocabulary — PUBLIC API
 
-`LocalOnly`, `RemoteOnly`, and `LocalAndRemote` are zero-state control tags. `ExecutionDomainScope<TScope>` accepts exactly those Types.
+`LocalOnly`, `RemoteOnly`, and `LocalAndRemote` are Event-facing aliases of the canonical zero-state `EDP-Primitives` execution-domain control Types. `ExecutionDomainScope<TScope>` delegates to the canonical Primitive scope concept.
 
 ## Retention request vocabulary — PUBLIC API
 

@@ -18,7 +18,7 @@ The supported consumer surface is exposed through `ESPressio_Event.hpp`.
 
 ## Results/scope/retention
 
-`DispatchResult`, `SubscribeResult`, `UnsubscribeResult`, `InitializationResult`, `DrainResult`, `LocalOnly`, `RemoteOnly`, `LocalAndRemote`, `UntilHandoff`, `ForDuration`, `UntilDeadline`, `RemoteDispatchAttempt` and `LocalAndRemoteDispatchResult` expose strongly typed operational state.
+`DispatchResult`, `SubscribeResult`, `UnsubscribeResult`, `InitializationResult`, `DrainResult`, `UntilHandoff`, `ForDuration`, `UntilDeadline`, `RemoteDispatchAttempt` and `LocalAndRemoteDispatchResult` expose strongly typed Event operational state. `LocalOnly`, `RemoteOnly`, and `LocalAndRemote` are Event-facing re-exports of the canonical `EDP-Primitives` execution-domain scope Types.
 
 ## Integration helper
 

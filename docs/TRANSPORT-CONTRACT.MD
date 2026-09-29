@@ -6,7 +6,7 @@ Every Event Type is semantically serialisable and transmissible, but EDP-Event n
 
 ## Scoped dispatch
 
-The public scope vocabulary is `LocalOnly`, `RemoteOnly` and `LocalAndRemote`.
+The public Event-facing scope vocabulary is `LocalOnly`, `RemoteOnly` and `LocalAndRemote`; these names are exact re-exports of the canonical `EDP-Primitives` execution-domain scope Types.
 
 - `LocalOnly` performs local Runtime admission only. Typed inbound Transport integration enters Event through `Ingress`, which is LocalOnly by construction and cannot automatically re-egress.
 - `RemoteOnly` needs no local Event Runtime. `DispatchScoped(RemoteOnly,...)` performs the common expiry gate and, if valid, invokes exactly one already-selected bounded outbound operation.

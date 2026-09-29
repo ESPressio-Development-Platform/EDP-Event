@@ -5,7 +5,7 @@
 ```text
 EDP-Event
 ├── EDP-System             mandatory — TypeIdentifier and Composition framework
-├── EDP-Primitives         mandatory — Primitive Family/Topology/FamilyPlan framework
+├── EDP-Primitives         mandatory — Primitive Family/Topology/FamilyPlan framework and canonical execution-domain scope vocabulary
 ├── EDP-Memory             mandatory — physical occurrence storage and lifetime
 ├── EDP-Threading          mandatory — Dedicated Threads, wake path and Event runtime mutex provider
 ├── EDP-Clock              mandatory — canonical monotonic retention deadlines

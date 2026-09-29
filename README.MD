@@ -24,7 +24,7 @@ The core vocabulary is:
 - `OccurrencePoolSpec<TPlan,TEvent>` — derives the exact EDP-Memory pool required by one deployed Event Type.
 - `Bootstrap<...>` / `Runtime<...>` — compile-time validated construction and bounded runtime operations.
 - `Subscribe`, `Unsubscribe`, `Dispatch`, `Ingress` and `Drain` — runtime Event operations.
-- `LocalOnly`, `RemoteOnly`, `LocalAndRemote` — execution-domain scope vocabulary.
+- `LocalOnly`, `RemoteOnly`, `LocalAndRemote` — Event-facing re-exports of the canonical `EDP-Primitives` execution-domain scope vocabulary.
 
 ## Documentation
 

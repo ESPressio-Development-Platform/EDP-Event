@@ -8,6 +8,8 @@ Consumed for stable `TypeIdentifier` and the Composition Framework. Event define
 
 ## EDP-Primitives
 
+Event consumes the canonical Primitive Family/Topology/FamilyPlan framework and the shared `ExecutionDomain::{LocalOnly, RemoteOnly, LocalAndRemote}` scope vocabulary. Event re-exports the scope Types for namespace consistency but does not own duplicate definitions.
+
 Consumed for `Family`, `Topology`, declaration filtering, `FamilyPlan`, `ResourcePlan` and family-planner integration. Event declarations are opaque family declarations to Primitives; the Event Planner normalizes them.
 
 ## EDP-Memory

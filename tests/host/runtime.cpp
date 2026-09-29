@@ -10,6 +10,13 @@
 namespace Test {
 
     namespace Event = ESPressio::Event;
+
+static_assert(std::is_same_v<Event::LocalOnly, ESPressio::Primitives::ExecutionDomain::LocalOnly>);
+static_assert(std::is_same_v<Event::RemoteOnly, ESPressio::Primitives::ExecutionDomain::RemoteOnly>);
+static_assert(std::is_same_v<Event::LocalAndRemote, ESPressio::Primitives::ExecutionDomain::LocalAndRemote>);
+static_assert(Event::ExecutionDomainScope<Event::LocalOnly>);
+static_assert(Event::ExecutionDomainScope<const Event::RemoteOnly&>);
+static_assert(!Event::ExecutionDomainScope<int>);
     namespace Primitives = ESPressio::Primitives;
     namespace BoundedTopology = ESPressio::BoundedTopology;
     namespace Memory = ESPressio::Memory;

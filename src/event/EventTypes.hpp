@@ -7,6 +7,7 @@
 
 #include <ESPressio_Clock.hpp>
 #include <ESPressio_Memory.hpp>
+#include <ESPressio_Primitives.hpp>
 
 namespace ESPressio::Event {
 
@@ -73,25 +74,22 @@ namespace ESPressio::Event {
     };
 
 
-    /// Selects local Event admission only.
-    struct LocalOnly final {};
+    /// Event-facing re-export of the canonical Primitive local-only execution-domain scope.
+    using LocalOnly = Primitives::ExecutionDomain::LocalOnly;
 
 
-    /// Selects an external remote Event handoff only.
-    struct RemoteOnly final {};
+    /// Event-facing re-export of the canonical Primitive remote-only execution-domain scope.
+    using RemoteOnly = Primitives::ExecutionDomain::RemoteOnly;
 
 
-    /// Selects independent local admission and external remote Event handoff.
-    struct LocalAndRemote final {};
+    /// Event-facing re-export of the canonical Primitive combined execution-domain scope.
+    using LocalAndRemote = Primitives::ExecutionDomain::LocalAndRemote;
 
 
-    /// Identifies one supported Event execution-domain scope tag.
+    /// Event-facing alias of the canonical Primitive execution-domain scope concept.
     /// @tparam TScope Candidate execution-domain scope Type.
     template<class TScope>
-    concept ExecutionDomainScope =
-        std::is_same_v<std::remove_cvref_t<TScope>, LocalOnly> ||
-        std::is_same_v<std::remove_cvref_t<TScope>, RemoteOnly> ||
-        std::is_same_v<std::remove_cvref_t<TScope>, LocalAndRemote>;
+    concept ExecutionDomainScope = Primitives::ExecutionDomain::Scope<TScope>;
 
 
     /// Requests retention until every pending local handoff has occurred or been cancelled.

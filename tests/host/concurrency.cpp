@@ -33,6 +33,10 @@ namespace Test {
         using Family = Event::Family;
         /// Test payload value used to verify delivery semantics.
         std::uint16_t Value{};
+        /// Canonical schema exposing the payload under one stable Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&QueueEvent::Value, 0U>
+        >;
     };
 
 } // Test

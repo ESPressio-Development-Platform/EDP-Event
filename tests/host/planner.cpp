@@ -15,6 +15,10 @@ namespace Test {
         using Family = ESPressio::Event::Family;
         /// Test payload value used to verify delivery semantics.
         int Value{};
+        /// Canonical schema exposing the test payload under one stable Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&EventA::Value, 0U>
+        >;
     };
 
     struct EventB final {
@@ -26,6 +30,10 @@ namespace Test {
         using Family = ESPressio::Event::Family;
         /// Test payload value used to verify delivery semantics.
         std::uint16_t Value{};
+        /// Canonical schema exposing the test payload under one stable Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&EventB::Value, 0U>
+        >;
     };
 
 } // Test

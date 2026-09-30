@@ -22,11 +22,21 @@ namespace EventTestSupport {
                 static_cast<std::uint8_t>(TOrdinal + 1U)
             }
         };
+
         /// Primitive family binding proving this test payload is an Event.
         using Family = Event::Family;
+
         /// Integer payload used by host and compile-fail Event tests.
         int Value{};
+
+        /// Canonical schema exposing the payload under one stable Type-local Field identity.
+        using Fields = System::FieldSet<
+            System::FieldBinding<&EventValue::Value, 0U>
+        >;
     };
+
+    static_assert(System::SchemaType<EventValue<0U>>);
+    static_assert(Event::EventType<EventValue<0U>>);
 
 } // EventTestSupport
 

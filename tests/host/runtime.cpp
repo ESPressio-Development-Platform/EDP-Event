@@ -36,6 +36,10 @@ static_assert(!Event::ExecutionDomainScope<int>);
         using Family = Event::Family;
         /// Test payload value used to verify delivery semantics.
         int Value{};
+        /// Canonical schema exposing the payload under one stable Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&QueueEvent::Value, 0U>
+        >;
     };
 
     struct LatestEvent final {
@@ -47,6 +51,10 @@ static_assert(!Event::ExecutionDomainScope<int>);
         using Family = Event::Family;
         /// Test payload value used to verify delivery semantics.
         int Value{};
+        /// Canonical schema exposing the payload under one stable Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&LatestEvent::Value, 0U>
+        >;
     };
 
     struct TestClock final {

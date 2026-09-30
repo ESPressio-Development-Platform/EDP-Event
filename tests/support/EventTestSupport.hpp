@@ -36,7 +36,6 @@ namespace EventTestSupport {
     };
 
     static_assert(System::SchemaType<EventValue<0U>>);
-    static_assert(Event::EventType<EventValue<0U>>);
 
 } // EventTestSupport
 
@@ -47,3 +46,9 @@ namespace ESPressio::Bounded {
         MemoryBoundedValueDeclaration<false, int> {};
 
 } // ESPressio::Bounded
+
+namespace EventTestSupport {
+
+    static_assert(Event::EventType<EventValue<0U>>);
+
+} // EventTestSupport

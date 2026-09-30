@@ -8,7 +8,9 @@ This header defines the public immutable Event deployment vocabulary plus privat
 
 ### `EventType<TEvent>` — PUBLIC CONCEPT
 
-`TEvent` is the candidate retained Event payload Type. The concept requires an EDP Primitive whose family is `Event::Family`, recursively memory-bounded under EDP-BoundedTypes, free of external lifetime dependencies, and nothrow destructible.
+`TEvent` is the candidate retained Event payload Type. The concept first requires the canonical `Primitives::PrimitiveType<TEvent>` contract and exact `Event::Family`. Because PrimitiveType requires `System::SchemaType`, a valid Event already has stable universal Type identity plus a canonical Type-local FieldSet. EventType then adds only Event-specific retained-value requirements: recursively memory-bounded ownership under EDP-BoundedTypes, no external lifetime dependencies, and nothrow destruction.
+
+EventType deliberately does not repeat `System::SchemaType`. Payload-bearing Events declare stable numeric Field bindings as part of their Primitive schema; zero-field Events use `System::FieldSet<>`.
 
 ### Admission and retention policy Types — PUBLIC API
 

@@ -4,17 +4,23 @@
 
 `EDP-Event` is the broadcast Primitive family. One accepted dispatch represents one immutable occurrence that may be delivered to zero or more statically eligible Listeners whose runtime subscriptions were active at admission.
 
+## Type and schema foundation
+
+The Event payload Type is the Event Primitive itself. Generic semantic identity and schema are inherited from `EDP-Primitives`: every Event must satisfy `Primitives::PrimitiveType`, and therefore `System::SchemaType`, before Event-specific qualification is considered. Payload-bearing Events expose stable Type-local numeric Field identifiers through `System::FieldSet`; zero-field Events use `System::FieldSet<>`.
+
+`Event::EventType` intentionally adds only family-specific retained-value constraints: exact `Event::Family`, recursively bounded memory, no external lifetime dependencies and nothrow destruction. It does not duplicate the generic SchemaType predicate. When the later Serialisation stage adds universal `SerialisableType` to PrimitiveType, Event will inherit that invariant in the same way rather than defining a second Event-local serialisability rule.
+
 ## Ownership boundaries
 
 Event owns family declarations, local admission, subscription state, retained occurrence semantics, bounded pending entitlement, expiry, Listener claims and callback handoff. `EDP-Memory` owns physical occurrence storage/lifetime. `EDP-BoundedTopology` owns compact finite identity/membership/FIFO mechanics. `EDP-Threading` owns Dedicated Threads, their wake path and ordinary-context mutex provider. `EDP-Clock` owns canonical monotonic time.
 
-Event owns no native thread, stack, allocator, codec, route, retry, connection, acknowledgement, transport queue or serialized representation.
+Event owns no native thread, stack, allocator, codec, route, retry, connection, acknowledgement, transport queue or serialized representation. Schema identity is intrinsic to the Primitive Type; encoding remains outside Event.
 
 ## Compile-time family plan
 
 Applications declare local Event deployments, immutable Observe relations and an optional family-wide Shared Pending entitlement. `Event::Planner` normalizes these declarations into the canonical `EDP-Primitives` Family Plan. The Planner derives locally deployed Primitive Types, Listener sets/ordinals, resource dimensions and Composition requirements.
 
-Outbound-only Event Types referenced only by an external Transport binding are not local deployments and consume no Event occurrence storage.
+Outbound-only Event Types referenced only by an external Transport binding are not local deployments and consume no Event occurrence storage. They remain schema-bearing Event Primitive Types because schema qualification is not deployment-dependent.
 
 ## Runtime synchronization
 

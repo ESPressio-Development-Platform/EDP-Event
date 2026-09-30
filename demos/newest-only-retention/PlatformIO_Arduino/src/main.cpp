@@ -74,6 +74,11 @@ namespace Demo {
         /// Demonstration latest-value payload.
         std::int32_t Value{0};
 
+        /// Canonical schema exposing the payload under one stable Type-local Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&LatestReading::Value, 0U>
+        >;
+
     };
 
 } // Demo

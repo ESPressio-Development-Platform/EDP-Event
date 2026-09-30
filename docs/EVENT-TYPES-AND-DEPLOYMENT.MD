@@ -2,9 +2,13 @@
 
 ## Event Type contract
 
-A concrete Event Type is the payload itself; there is no wrapper object. It must expose a stable `System::TypeIdentifier`, declare `using Family = Event::Family`, and satisfy `Event::EventType`.
+A concrete Event Type is the payload itself; there is no wrapper object. Every Event is first a canonical `Primitives::PrimitiveType`, so it must expose a stable `System::TypeIdentifier`, declare `using Family = Event::Family`, and satisfy `System::SchemaType` through the Primitive contract. Payload-bearing Events therefore declare a canonical `System::FieldSet` with stable numeric Type-local `System::FieldIdentifier` values. A genuinely zero-field Event uses `System::FieldSet<>`.
+
+`Event::EventType` deliberately does not duplicate the generic schema predicate. It adds only Event-specific retained-value requirements on top of `Primitives::PrimitiveType`: exact Event-family identity, recursively bounded owned memory, no external lifetime dependencies, and nothrow destruction.
 
 Retained Event values must be recursively memory-bounded and self-contained according to EDP-BoundedTypes. Dynamic owners such as `std::string`/`std::vector`, and payloads with external lifetime dependencies, are rejected because `MaximumInstances` must bound the complete retained owned-memory graph rather than only `sizeof(TEvent)`.
+
+The schema requirement is independent of whether this deployment currently participates in Transport. Transport/encoding remain outside EDP-Event; schema identity is an intrinsic Primitive property.
 
 ## Local deployment
 

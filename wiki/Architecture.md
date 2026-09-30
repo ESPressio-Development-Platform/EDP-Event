@@ -2,7 +2,11 @@
 
 ## Domain model
 
-One accepted local Dispatch represents one immutable occurrence of a concrete Event payload Type. At admission, Event snapshots the active subscription bits for that Type. Each eligible Listener is an application-owned `EDP-Threading::DedicatedThread` identity; fan-out is represented as one bit per Type-local Listener ordinal rather than payload copies.
+One accepted local Dispatch represents one immutable occurrence of a concrete Event payload Type. The payload Type is itself an Event-family Primitive. Consequently every Event inherits the generic `Primitives::PrimitiveType` contract, including stable `System::TypeIdentifier` identity and `System::SchemaType` metadata. Payload fields use explicit stable numeric Type-local `System::FieldIdentifier` bindings; a zero-field Event uses `System::FieldSet<>`.
+
+`EventType<T>` deliberately adds only Event-specific retained-value constraints above the generic Primitive contract: exact Event-family identity, recursively bounded owned memory, no external lifetime dependencies and nothrow destruction. Schema qualification is not duplicated locally in Event.
+
+At admission, Event snapshots the active subscription bits for that Type. Each eligible Listener is an application-owned `EDP-Threading::DedicatedThread` identity; fan-out is represented as one bit per Type-local Listener ordinal rather than payload copies.
 
 Local occurrence storage is exact and per Type. `MaximumInstances<TEvent>` is the maximum simultaneous live occurrence count, including borrow-only occurrences whose pending recipients have already been exhausted. `EDP-Memory` owns physical storage/lifetime; Event owns semantic admission/reclamation decisions.
 
@@ -18,4 +22,4 @@ Event never creates a worker. Event signals the existing Threading wake path of 
 
 ## Transport boundary
 
-Outbound Transport is an external bounded typed handoff of `const TEvent&`; inbound Transport deserializes before calling Event ingress. Event does not own wire bytes, codec, route, buffering, retry, connection or acknowledgement semantics.
+Outbound Transport is an external bounded typed handoff of `const TEvent&`; inbound Transport deserializes before calling Event ingress. Event does not own wire bytes, codec, route, buffering, retry, connection or acknowledgement semantics. Whether a deployment currently uses Transport does not alter the Event Type's intrinsic schema contract.

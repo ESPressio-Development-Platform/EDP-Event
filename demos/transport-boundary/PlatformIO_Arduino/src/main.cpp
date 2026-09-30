@@ -79,6 +79,11 @@ namespace Demo {
         /// Demonstration value transported locally and remotely.
         std::int32_t Value{0};
 
+        /// Canonical schema exposing the payload under one stable Type-local Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&BoundaryEvent::Value, 0U>
+        >;
+
     };
 
 } // Demo

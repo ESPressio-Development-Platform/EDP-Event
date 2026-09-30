@@ -71,6 +71,11 @@ namespace Demo {
         /// Temperature in hundredths of one degree Celsius.
         std::int16_t CelsiusX100{0};
 
+        /// Canonical schema exposing the payload under one stable Type-local Field identity.
+        using Fields = ESPressio::System::FieldSet<
+            ESPressio::System::FieldBinding<&TemperatureChanged::CelsiusX100, 0U>
+        >;
+
     };
 
 } // Demo

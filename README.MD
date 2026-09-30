@@ -4,6 +4,8 @@
 
 Event owns admission, retention, subscription and delivery semantics. EDP-Memory owns occurrence storage and object lifetime; EDP-BoundedTopology supplies compact finite identity/membership/Queue mechanics; EDP-Threading owns Listener execution and advisory wake delivery; EDP-Clock supplies canonical monotonic deadlines. Encoding and Transport remain outside Event.
 
+Every Event is first a canonical `EDP-Primitives` Primitive. It therefore has stable universal Type identity and a compile-time `System::SchemaType` FieldSet independent of whether any current deployment uses Transport. `Event::EventType` adds only Event-specific retained-value constraints: exact Event family, recursively bounded owned memory, no external lifetime dependencies and nothrow destruction.
+
 ## Public facilities
 
 Include:
@@ -45,7 +47,7 @@ The walkthrough below constructs a complete application which emits `Temperature
 
 ### 1. Define the Event Type
 
-An Event Type is its own payload. Give it a stable Primitive identifier and identify the Event family:
+An Event Type is its own payload. Give it a stable Primitive identifier, bind it to the Event family, and declare its canonical Type-local schema:
 
 ```cpp
 struct TemperatureChanged final {
@@ -57,10 +59,16 @@ struct TemperatureChanged final {
 
     using Family = ESPressio::Event::Family;
     std::int16_t CelsiusX100{0};
+
+    using Fields = ESPressio::System::FieldSet<
+        ESPressio::System::FieldBinding<&TemperatureChanged::CelsiusX100, 0U>
+    >;
 };
 ```
 
-Because Event may outlive the producer until every Listener callback has returned, retained payloads must be recursively memory-bounded and self-contained. Certify the owned member graph with EDP-BoundedTypes:
+The numeric Field identifier is stable semantic schema identity and is not derived from member order or a localized name. A genuinely zero-field Event would instead declare `using Fields = ESPressio::System::FieldSet<>;`.
+
+Because Event may outlive the producer until every Listener callback has returned, retained payloads must also be recursively memory-bounded and self-contained. Certify the owned member graph with EDP-BoundedTypes:
 
 ```cpp
 namespace ESPressio::Bounded {
@@ -72,7 +80,7 @@ namespace ESPressio::Bounded {
 } // ESPressio::Bounded
 ```
 
-The `false` states that the value has no external lifetime dependency.
+The `false` states that the value has no external lifetime dependency. These bounded-retention requirements are Event-specific; the TypeIdentifier/Fields contract is inherited from `Primitives::PrimitiveType`.
 
 ### 2. Give the Listener a Dedicated Thread identity
 
@@ -371,7 +379,7 @@ EDP-Event
 └── EDP-BoundedTypes
 ```
 
-`EDP-Memory` and `EDP-Threading` are consumed from their `main` branches. The compact indexed-pool and Dedicated-Thread wake/mutex prerequisites are now integrated into those repositories' `main` branches. `library.json`, the PIOArduino demo projects and `examples/TemperatureMonitor` pin those refs explicitly to `main`; Arduino IDE users should use matching `main` checkouts in the coherent sibling workspace.
+`EDP-Memory` and `EDP-Threading` are consumed from their `main` branches. During the Serialisation prerequisite tranche, the matching Event branch is validated against `EDP-System/serialisation_prerequisites` and `EDP-Primitives/serialisation_prerequisites`; `main` validation continues to consume those dependencies from `main`. The schema migration introduces no new Event runtime dependency edge.
 
 See [`DEPENDENCY_GRAPH.MD`](./DEPENDENCY_GRAPH.MD) for ownership and direction details.
 

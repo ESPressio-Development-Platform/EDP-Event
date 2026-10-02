@@ -7,7 +7,7 @@ ARDUINO_CLI="${ARDUINO_CLI:-arduino-cli}"
 FQBN="${EDP_EVENT_ARDUINO_FQBN:-esp32:esp32:esp32}"
 
 required=(
-    EDP-Event EDP-System EDP-Primitives EDP-Memory EDP-Threading EDP-Clock
+    EDP-Event EDP-System EDP-Primitives EDP-Serialisation EDP-Localisation EDP-Memory EDP-Threading EDP-Clock
     EDP-BoundedTopology EDP-BoundedTypes EDP-Platform EDP-Platform-Portable
     EDP-Platform-FreeRTOS EDP-Platform-ESP-IDF
 )

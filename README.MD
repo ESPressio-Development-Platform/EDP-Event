@@ -4,7 +4,7 @@
 
 Event owns admission, retention, subscription and delivery semantics. EDP-Memory owns occurrence storage and object lifetime; EDP-BoundedTopology supplies compact finite identity/membership/Queue mechanics; EDP-Threading owns Listener execution and advisory wake delivery; EDP-Clock supplies canonical monotonic deadlines. Encoding and Transport remain outside Event.
 
-Every Event is first a canonical `EDP-Primitives` Primitive. It therefore has stable universal Type identity and a compile-time `System::SchemaType` FieldSet independent of whether any current deployment uses Transport. `Event::EventType` adds only Event-specific retained-value constraints: exact Event family, recursively bounded owned memory, no external lifetime dependencies and nothrow destruction.
+Every Event is first a canonical `EDP-Primitives` Primitive. It therefore has stable universal Type identity, a compile-time `System::SchemaType` FieldSet, and universal `Serialisation::SerialisableType` qualification independent of deployment or Transport. `Event::EventType` adds only Event-specific retained-value constraints: exact Event family, recursively bounded owned memory, no external lifetime dependencies and nothrow destruction.
 
 ## Public facilities
 
@@ -80,7 +80,7 @@ namespace ESPressio::Bounded {
 } // ESPressio::Bounded
 ```
 
-The `false` states that the value has no external lifetime dependency. These bounded-retention requirements are Event-specific; the TypeIdentifier/Fields contract is inherited from `Primitives::PrimitiveType`.
+The `false` states that the value has no external lifetime dependency. These bounded-retention requirements are Event-specific; TypeIdentifier/Fields plus recursive serialisability are inherited from `Primitives::PrimitiveType`.
 
 ### 2. Give the Listener a Dedicated Thread identity
 
@@ -379,7 +379,7 @@ EDP-Event
 └── EDP-BoundedTypes
 ```
 
-`EDP-Memory` and `EDP-Threading` are consumed from their `main` branches. During the Serialisation prerequisite tranche, the matching Event branch is validated against `EDP-System/serialisation_prerequisites` and `EDP-Primitives/serialisation_prerequisites`; `main` validation continues to consume those dependencies from `main`. The schema migration introduces no new Event runtime dependency edge.
+`EDP-Memory`, `EDP-Threading`, `EDP-System`, and `EDP-Primitives` are consumed from `main`. Stage C inherits universal serialisability through `EDP-Primitives/main`; Event does not duplicate that predicate or add a direct codec dependency. Event version is now `0.1.0`.
 
 See [`DEPENDENCY_GRAPH.MD`](./DEPENDENCY_GRAPH.MD) for ownership and direction details.
 

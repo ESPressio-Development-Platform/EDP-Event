@@ -6,9 +6,9 @@
 
 ## Type and schema foundation
 
-The Event payload Type is the Event Primitive itself. Generic semantic identity and schema are inherited from `EDP-Primitives`: every Event must satisfy `Primitives::PrimitiveType`, and therefore `System::SchemaType`, before Event-specific qualification is considered. Payload-bearing Events expose stable Type-local numeric Field identifiers through `System::FieldSet`; zero-field Events use `System::FieldSet<>`.
+The Event payload Type is the Event Primitive itself. Generic semantic identity and schema are inherited from `EDP-Primitives`: every Event must satisfy `Primitives::PrimitiveType`, and therefore both `System::SchemaType` and `Serialisation::SerialisableType`, before Event-specific qualification is considered. Payload-bearing Events expose stable Type-local numeric Field identifiers through `System::FieldSet`; zero-field Events use `System::FieldSet<>`.
 
-`Event::EventType` intentionally adds only family-specific retained-value constraints: exact `Event::Family`, recursively bounded memory, no external lifetime dependencies and nothrow destruction. It does not duplicate the generic SchemaType predicate. When the later Serialisation stage adds universal `SerialisableType` to PrimitiveType, Event will inherit that invariant in the same way rather than defining a second Event-local serialisability rule.
+`Event::EventType` intentionally adds only family-specific retained-value constraints: exact `Event::Family`, recursively bounded memory, no external lifetime dependencies and nothrow destruction. It does not duplicate the generic SchemaType or SerialisableType predicates. Stage C inherits both through PrimitiveType rather than defining a second Event-local serialisability rule.
 
 ## Ownership boundaries
 

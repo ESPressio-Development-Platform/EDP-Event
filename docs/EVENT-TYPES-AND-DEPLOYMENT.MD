@@ -2,7 +2,7 @@
 
 ## Event Type contract
 
-A concrete Event Type is the payload itself; there is no wrapper object. Every Event is first a canonical `Primitives::PrimitiveType`, so it must expose a stable `System::TypeIdentifier`, declare `using Family = Event::Family`, and satisfy `System::SchemaType` through the Primitive contract. Payload-bearing Events therefore declare a canonical `System::FieldSet` with stable numeric Type-local `System::FieldIdentifier` values. A genuinely zero-field Event uses `System::FieldSet<>`.
+A concrete Event Type is the payload itself; there is no wrapper object. Every Event is first a canonical `Primitives::PrimitiveType`, so it must expose a stable `System::TypeIdentifier`, declare `using Family = Event::Family`, and satisfy both `System::SchemaType` and `Serialisation::SerialisableType` through the Primitive contract. Payload-bearing Events therefore declare a canonical `System::FieldSet` with stable numeric Type-local `System::FieldIdentifier` values. A genuinely zero-field Event uses `System::FieldSet<>`.
 
 `Event::EventType` deliberately does not duplicate the generic schema predicate. It adds only Event-specific retained-value requirements on top of `Primitives::PrimitiveType`: exact Event-family identity, recursively bounded owned memory, no external lifetime dependencies, and nothrow destruction.
 

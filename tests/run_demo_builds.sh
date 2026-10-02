@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKSPACE="$(cd "${ROOT}/.." && pwd)"
-required=(EDP-Event EDP-System EDP-Primitives EDP-Memory EDP-Threading EDP-Clock EDP-BoundedTopology EDP-BoundedTypes EDP-Platform EDP-Platform-Portable EDP-Platform-FreeRTOS EDP-Platform-ESP-IDF)
+required=(EDP-Event EDP-System EDP-Primitives EDP-Serialisation EDP-Localisation EDP-Memory EDP-Threading EDP-Clock EDP-BoundedTopology EDP-BoundedTypes EDP-Platform EDP-Platform-Portable EDP-Platform-FreeRTOS EDP-Platform-ESP-IDF)
 for repository in "${required[@]}"; do
     [[ -d "${WORKSPACE}/${repository}/src" ]] || { echo "Missing sibling repository: ${repository}" >&2; exit 2; }
 done
@@ -22,7 +22,7 @@ for line in lines:
         if line.startswith('['): skipping=False
         else: continue
     output.append(line)
-repos=['EDP-Event','EDP-System','EDP-Primitives','EDP-Memory','EDP-Threading','EDP-Clock','EDP-BoundedTopology','EDP-BoundedTypes','EDP-Platform','EDP-Platform-Portable','EDP-Platform-FreeRTOS','EDP-Platform-ESP-IDF']
+repos=['EDP-Event','EDP-System','EDP-Primitives','EDP-Serialisation','EDP-Localisation','EDP-Memory','EDP-Threading','EDP-Clock','EDP-BoundedTopology','EDP-BoundedTypes','EDP-Platform','EDP-Platform-Portable','EDP-Platform-FreeRTOS','EDP-Platform-ESP-IDF']
 expanded=[]
 for line in output:
     expanded.append(line)

@@ -6,7 +6,7 @@ The supported consumer surface is exposed through `ESPressio_Event.hpp`.
 
 `Family`, `Queue<N>`, `NewestOnly`, `UntilHandoffOnly`, `TimedRetention`, `Deploy<TEvent,N,Admission,Retention>`, `SharedPending<N>` and `Observe<TThread,TEvent>` define static Event-family topology.
 
-`EventType<T>` requires an Event-family `Primitives::PrimitiveType<T>` and then adds the retained-value constraints that are specific to Event: recursively memory-bounded ownership, no external lifetime dependencies and nothrow destruction. Because `PrimitiveType` requires `System::SchemaType`, every Event already has a stable TypeIdentifier and canonical FieldSet before Event-specific qualification is applied. EventType intentionally does not duplicate that generic schema predicate.
+`EventType<T>` requires an Event-family `Primitives::PrimitiveType<T>` and then adds the retained-value constraints that are specific to Event: recursively memory-bounded ownership, no external lifetime dependencies and nothrow destruction. Because `PrimitiveType` requires both `System::SchemaType` and `Serialisation::SerialisableType`, every Event already has a stable TypeIdentifier, canonical FieldSet, and recursively serialisable schema before Event-specific qualification is applied. EventType intentionally does not duplicate either generic predicate.
 
 Payload-bearing Event Types expose stable numeric Type-local fields with `System::FieldBinding`; zero-field Event Types use `System::FieldSet<>`.
 

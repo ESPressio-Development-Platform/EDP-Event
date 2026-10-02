@@ -6,7 +6,7 @@ WORKSPACE="$(cd "${ROOT}/.." && pwd)"
 PROJECT="examples/TemperatureMonitor"
 
 required=(
-    EDP-Event EDP-System EDP-Primitives EDP-Memory EDP-Threading EDP-Clock
+    EDP-Event EDP-System EDP-Primitives EDP-Serialisation EDP-Localisation EDP-Memory EDP-Threading EDP-Clock
     EDP-BoundedTopology EDP-BoundedTypes EDP-Platform EDP-Platform-Portable
     EDP-Platform-FreeRTOS EDP-Platform-ESP-IDF
 )
@@ -43,7 +43,7 @@ for line in lines:
     output.append(line)
 
 repositories = [
-    "EDP-Event", "EDP-System", "EDP-Primitives", "EDP-Memory", "EDP-Threading",
+    "EDP-Event", "EDP-System", "EDP-Primitives", "EDP-Serialisation", "EDP-Localisation", "EDP-Memory", "EDP-Threading",
     "EDP-Clock", "EDP-BoundedTopology", "EDP-BoundedTypes", "EDP-Platform",
     "EDP-Platform-Portable", "EDP-Platform-FreeRTOS", "EDP-Platform-ESP-IDF",
 ]

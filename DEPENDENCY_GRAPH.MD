@@ -5,7 +5,7 @@
 ```text
 EDP-Event
 ├── EDP-System             mandatory — TypeIdentifier/Field schema and Composition framework
-├── EDP-Primitives         mandatory — Primitive SchemaType invariant, Family/Topology/FamilyPlan framework and canonical execution-domain scope vocabulary
+├── EDP-Primitives         mandatory — Primitive SchemaType + SerialisableType invariants, Family/Topology/FamilyPlan framework and canonical execution-domain scope vocabulary
 ├── EDP-Memory             mandatory — physical occurrence storage and lifetime
 ├── EDP-Threading          mandatory — Dedicated Threads, wake path and Event runtime mutex provider
 ├── EDP-Clock              mandatory — canonical monotonic retention deadlines
@@ -13,10 +13,10 @@ EDP-Event
 └── EDP-BoundedTypes       mandatory — recursive finite/self-contained Event payload qualification
 ```
 
-The Serialisation-prerequisite schema migration introduces **no new Event dependency edge**. Event already depends on EDP-Primitives and EDP-System; the strengthened Primitive contract simply means every Event now consumes the existing System `SchemaType`/`FieldSet` foundation through that established dependency direction.
+Stage C introduces **no new direct Event dependency edge**. Event already depends on EDP-Primitives; the strengthened Primitive contract means every Event now inherits both System schema and Serialisation qualification through that established direction. EDP-Serialisation is therefore transitive from Event, not directly consumed by Event source.
 
-The dependency directions above are architectural. `EDP-Memory` and `EDP-Threading` remain consumed from `main`. On `EDP-Event/serialisation_prerequisites`, validation intentionally consumes matching `EDP-System/serialisation_prerequisites` and `EDP-Primitives/serialisation_prerequisites`; Event `main` continues to consume their `main` branches. The temporary branch coherence is a workstream validation requirement, not a new runtime dependency.
+The dependency directions above are architectural. All Stage-C work is now on `main`; the former prerequisite branches have been fast-forwarded into their owning `main` branches.
 
 Concrete Platform providers are selected by the application through `EDP-Memory` and `EDP-Threading`; they are not direct `EDP-Event` dependencies.
 
-Serialisation codecs, Transport implementations, Security, Radio, Mesh and Sockets remain external integration domains and are not dependencies of `EDP-Event`.
+Serialisation codecs, Transport implementations, Security, Radio, Mesh and Sockets remain external integration domains and are not direct dependencies of `EDP-Event`; only compile-time serialisability qualification arrives transitively through EDP-Primitives.

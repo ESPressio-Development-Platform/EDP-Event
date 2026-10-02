@@ -14,12 +14,14 @@ SANITIZER_MODE = os.environ.get("EDP_EVENT_SANITIZER_MODE", "").strip().lower()
 DEPENDENCIES = (
     "EDP-System",
     "EDP-Primitives",
+    "EDP-Serialisation",
     "EDP-Memory",
     "EDP-Threading",
     "EDP-Clock",
     "EDP-BoundedTopology",
     "EDP-BoundedTypes",
     "EDP-Platform",
+    "EDP-Platform-Portable",
 )
 INCLUDES = [ROOT / "src"] + [ROOT.parent / name / "src" for name in DEPENDENCIES]
 

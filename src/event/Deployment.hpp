@@ -10,7 +10,9 @@
 
 namespace ESPressio::Event {
 
-    /// Identifies a concrete Primitive payload which can be retained safely as an Event occurrence.
+    /// Identifies a serialisable concrete Primitive payload which can be retained safely as an Event occurrence.
+    /// `Primitives::PrimitiveType` supplies the universal System schema and Serialisation qualification; Event adds only
+    /// bounded retained-memory, self-contained lifetime, family, and nothrow-destruction constraints.
     /// @tparam TEvent Candidate Event payload Type.
     template<class TEvent>
     concept EventType =

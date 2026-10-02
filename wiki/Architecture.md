@@ -2,7 +2,7 @@
 
 ## Domain model
 
-One accepted local Dispatch represents one immutable occurrence of a concrete Event payload Type. The payload Type is itself an Event-family Primitive. Consequently every Event inherits the generic `Primitives::PrimitiveType` contract, including stable `System::TypeIdentifier` identity and `System::SchemaType` metadata. Payload fields use explicit stable numeric Type-local `System::FieldIdentifier` bindings; a zero-field Event uses `System::FieldSet<>`.
+One accepted local Dispatch represents one immutable occurrence of a concrete Event payload Type. The payload Type is itself an Event-family Primitive. Consequently every Event inherits the generic `Primitives::PrimitiveType` contract, including stable `System::TypeIdentifier` identity, `System::SchemaType` metadata, and `Serialisation::SerialisableType` qualification. Payload fields use explicit stable numeric Type-local `System::FieldIdentifier` bindings; a zero-field Event uses `System::FieldSet<>`.
 
 `EventType<T>` deliberately adds only Event-specific retained-value constraints above the generic Primitive contract: exact Event-family identity, recursively bounded owned memory, no external lifetime dependencies and nothrow destruction. Schema qualification is not duplicated locally in Event.
 

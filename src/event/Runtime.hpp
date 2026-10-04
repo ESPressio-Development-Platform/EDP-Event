@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -13,11 +15,90 @@
 
 #include "Composition.hpp"
 #include "Occurrence.hpp"
+#include "Reservation.hpp"
 #include "Retention.hpp"
 
 namespace ESPressio::Event {
 
     namespace Detail {
+
+        /// Compact exact-use counter which compiles away for zero capacity.
+        template<std::size_t TCapacity, bool TEnabled = (TCapacity > 0U)>
+        struct CapacityCounter final {
+            using Storage = CountStorage<TCapacity>;
+            Storage Used{0U};
+
+            [[nodiscard]] std::size_t Count() const noexcept {
+                return static_cast<std::size_t>(Used);
+            }
+
+            void Increment() noexcept {
+                ++Used;
+            }
+
+            void Decrement() noexcept {
+                --Used;
+            }
+        };
+
+        template<std::size_t TCapacity>
+        struct CapacityCounter<TCapacity, false> final {
+            [[nodiscard]] constexpr std::size_t Count() const noexcept {
+                return 0U;
+            }
+
+            constexpr void Increment() noexcept {
+            }
+
+            constexpr void Decrement() noexcept {
+            }
+        };
+
+
+        /// Generation and entitlement state for one physical unpublished ingress slot.
+        struct IngressSlotState final {
+            std::uint32_t Generation{0U};
+            bool Reserved{false};
+            bool Cancelled{false};
+            bool SharedPending{false};
+        };
+
+
+        /// Exact per-Type ingress reservation metadata indexed by physical occurrence slot.
+        template<class TPlan, class TEvent>
+        struct IngressState final {
+            std::array<
+                IngressSlotState,
+                TPlan::template Deployment<TEvent>::MaximumInstances
+            > Slots{};
+        };
+
+
+        /// One caller-owned Event borrow in the local ordered handoff sequencer.
+        template<class TEvent>
+        struct OutboundHandoffSlot final {
+            const TEvent* EventView{nullptr};
+            MonotonicTimestamp Deadline{};
+            std::uint32_t Generation{0U};
+            bool Occupied{false};
+            bool Terminal{false};
+            bool InFlight{false};
+        };
+
+
+        /// Positive-capacity ring preserving local handoff-opportunity order without payload copies.
+        template<class TPlan, class TEvent, std::size_t TCapacity = TPlan::template RemoteHandoffCapacity<TEvent>>
+        struct OutboundSequencer final {
+            std::array<OutboundHandoffSlot<TEvent>, TCapacity> Slots{};
+            CountStorage<TCapacity> Head{0U};
+            CountStorage<TCapacity> Count{0U};
+        };
+
+
+        /// Zero-capacity sequencer has no retained state.
+        template<class TPlan, class TEvent>
+        struct OutboundSequencer<TPlan, TEvent, 0U> final {};
+
 
         /// Admission-state primary declaration selected by one deployment's Queue shape.
         /// @tparam TPlan Normalized Event plan.
@@ -55,6 +136,11 @@ namespace ESPressio::Event {
 
             /// FIFO of occurrences with at least one pending Listener interest.
             Queue Pending{};
+
+            /// Exact committed-plus-reserved use of Type-local dedicated pending entitlement.
+            [[no_unique_address]] CapacityCounter<
+                TPlan::template DedicatedPendingCapacity<TEvent>
+            > DedicatedUsed{};
 
         };
 
@@ -99,6 +185,12 @@ namespace ESPressio::Event {
 
             /// Queue/NewestOnly pending topology state selected by the deployment.
             AdmissionState<TPlan, TEvent> Admission{};
+
+            /// Physical-slot generation and unpublished ingress ownership.
+            IngressState<TPlan, TEvent> Ingress{};
+
+            /// Bounded local ordering for outbound handoff opportunities.
+            [[no_unique_address]] OutboundSequencer<TPlan, TEvent> Outbound{};
 
         };
 
@@ -396,6 +488,9 @@ namespace ESPressio::Event {
             /// Indicates whether required owning-domain preconditions have been established.
             bool _initialized{false};
 
+            /// Admission gate for unpublished ingress and ordered outbound integration reservations.
+            bool _integrationOpen{false};
+
             // Infrastructure failure boundary.
 
             /// Terminates when an owning-domain provider violates an invariant that Event cannot represent as a semantic Dispatch result.
@@ -513,46 +608,27 @@ namespace ESPressio::Event {
 
             // Queue/shared-pending accounting.
 
-            /// Computes current pending Queue occurrence count with a bounded traversal instead of retained count state.
-            /// @tparam TEvent Queue-deployed Event payload Type.
-            template<class TEvent>
-            std::size_t QueuePendingCount() noexcept requires (TPlan::template IsQueue<TEvent>) {
-                auto& state = StateFor<TEvent>().Admission;
-                auto current = state.Pending.Head();
-                std::size_t count = 0U;
-
-                for (
-                    ;
-                    count < Record<TEvent>::MaximumInstances && current.IsValid();
-                    ++count
-                ) {
-                    current = RecordAt<TEvent>(current).QueueNext();
-                }
-
-                return count;
-            }
-
-            /// Removes one Queue occurrence and releases SharedPending entitlement when applicable.
+            /// Removes one Queue occurrence and releases its exact retained pending entitlement.
             /// @tparam TEvent Queue-deployed Event payload Type.
             /// @param index Pending occurrence identity being removed.
-            /// @param pendingBefore Queue pending cardinality immediately before removal.
             template<class TEvent>
             void RemovePendingQueueOccurrence(
-                typename Record<TEvent>::OccurrenceIndex index,
-                std::size_t pendingBefore
+                typename Record<TEvent>::OccurrenceIndex index
             ) noexcept requires (TPlan::template IsQueue<TEvent>) {
+                auto& record = RecordAt<TEvent>(index);
+                const bool shared = record.ConsumesSharedPending();
+                auto& admission = StateFor<TEvent>().Admission;
                 auto records = Records<TEvent>();
-                const auto removeResult = StateFor<TEvent>().Admission.Pending.Remove(
-                    records,
-                    index
-                );
+                const auto removeResult = admission.Pending.Remove(records, index);
 
                 if (removeResult != BoundedTopology::IntrusiveQueueRemoveResult::Removed) {
                     InfrastructureFailure();
                 }
 
-                if (pendingBefore > TPlan::template DedicatedPendingCapacity<TEvent>) {
+                if (shared) {
                     _sharedPending.Decrement();
+                } else {
+                    admission.DedicatedUsed.Decrement();
                 }
             }
 
@@ -570,7 +646,6 @@ namespace ESPressio::Event {
                 } else if constexpr (TPlan::template IsQueue<TEvent>) {
                     auto& queue = StateFor<TEvent>().Admission.Pending;
                     auto current = queue.Head();
-                    std::size_t pending = QueuePendingCount<TEvent>();
                     std::size_t visited = 0U;
 
                     while (
@@ -582,11 +657,7 @@ namespace ESPressio::Event {
 
                         if (record.IsExpired(now)) {
                             record.PendingRecipients().ClearAll();
-                            RemovePendingQueueOccurrence<TEvent>(
-                                current,
-                                pending
-                            );
-                            --pending;
+                            RemovePendingQueueOccurrence<TEvent>(current);
 
                             if (record.ActiveBorrowCount() == 0U) {
                                 ReleaseOccurrence<TEvent>(current);
@@ -716,8 +787,10 @@ namespace ESPressio::Event {
                 auto& state = StateFor<TEvent>();
 
                 if constexpr (TPlan::template IsQueue<TEvent>) {
-                    const auto pending = QueuePendingCount<TEvent>();
-                    const bool needsShared = pending >= TPlan::template DedicatedPendingCapacity<TEvent>;
+                    auto& admission = state.Admission;
+                    const bool needsShared =
+                        admission.DedicatedUsed.Count() >=
+                        TPlan::template DedicatedPendingCapacity<TEvent>;
 
                     if (
                         needsShared &&
@@ -743,11 +816,10 @@ namespace ESPressio::Event {
                     }
 
                     const auto eventIndex = ToEventIndex<TEvent>(memoryIndex);
+                    auto& record = RecordAt<TEvent>(eventIndex);
+                    record.SetQueueEntitlement(needsShared);
                     auto records = Records<TEvent>();
-                    const auto queueResult = state.Admission.Pending.Push(
-                        records,
-                        eventIndex
-                    );
+                    const auto queueResult = admission.Pending.Push(records, eventIndex);
 
                     if (queueResult != BoundedTopology::IntrusiveQueuePushResult::Succeeded) {
                         InfrastructureFailure();
@@ -755,6 +827,8 @@ namespace ESPressio::Event {
 
                     if (needsShared) {
                         _sharedPending.Increment();
+                    } else {
+                        admission.DedicatedUsed.Increment();
                     }
 
                     WakeRecipients<TEvent>(recipients);
@@ -807,6 +881,240 @@ namespace ESPressio::Event {
                     pendingIndex = newIndex;
                     WakeRecipients<TEvent>(recipients);
                     return DispatchResult::Accepted;
+                }
+            }
+
+            // Transactional ingress reservation state.
+
+            template<class TEvent>
+            [[nodiscard]] Detail::IngressSlotState& IngressSlotAt(
+                std::size_t index
+            ) noexcept {
+                return StateFor<TEvent>().Ingress.Slots[index];
+            }
+
+            template<class TEvent>
+            [[nodiscard]] bool MatchesIngressLocked(
+                std::size_t index,
+                std::uint32_t generation
+            ) noexcept {
+                return index < Record<TEvent>::MaximumInstances &&
+                    IngressSlotAt<TEvent>(index).Reserved &&
+                    IngressSlotAt<TEvent>(index).Generation == generation;
+            }
+
+            template<class TEvent>
+            void ReleaseIngressEntitlementLocked(
+                Detail::IngressSlotState& slot
+            ) noexcept {
+                if constexpr (TPlan::template IsQueue<TEvent>) {
+                    if (slot.SharedPending) {
+                        _sharedPending.Decrement();
+                    } else {
+                        StateFor<TEvent>().Admission.DedicatedUsed.Decrement();
+                    }
+                }
+            }
+
+            template<class TEvent>
+            void AbortIngressLocked(
+                std::size_t index
+            ) noexcept {
+                auto& slot = IngressSlotAt<TEvent>(index);
+                ReleaseIngressEntitlementLocked<TEvent>(slot);
+                slot.Reserved = false;
+                slot.Cancelled = false;
+                slot.SharedPending = false;
+                ReleaseOccurrence<TEvent>(
+                    Record<TEvent>::OccurrenceIndex::FromUnchecked(index)
+                );
+            }
+
+            // Ordered outbound handoff sequencer.
+
+            template<class TEvent>
+            [[nodiscard]] bool MatchesRemoteHandoffLocked(
+                std::size_t index,
+                std::uint32_t generation
+            ) noexcept {
+                if constexpr (TPlan::template RemoteHandoffCapacity<TEvent> == 0U) {
+                    static_cast<void>(index);
+                    static_cast<void>(generation);
+                    return false;
+                } else {
+                    auto& sequence = StateFor<TEvent>().Outbound;
+                    return index < TPlan::template RemoteHandoffCapacity<TEvent> &&
+                        sequence.Slots[index].Occupied &&
+                        sequence.Slots[index].Generation == generation;
+                }
+            }
+
+            template<class TEvent>
+            void AdvanceRemoteHandoffHeadLocked() noexcept {
+                if constexpr (TPlan::template RemoteHandoffCapacity<TEvent> != 0U) {
+                    constexpr auto capacity = TPlan::template RemoteHandoffCapacity<TEvent>;
+                    auto& sequence = StateFor<TEvent>().Outbound;
+
+                    while (sequence.Count != 0U) {
+                        const auto head = static_cast<std::size_t>(sequence.Head);
+                        auto& slot = sequence.Slots[head];
+
+                        if (!slot.Occupied || !slot.Terminal || slot.InFlight) {
+                            break;
+                        }
+
+                        slot.EventView = nullptr;
+                        slot.Deadline = MonotonicTimestamp{};
+                        slot.Occupied = false;
+                        slot.Terminal = false;
+                        sequence.Head = static_cast<Detail::CountStorage<capacity>>(
+                            (head + 1U) % capacity
+                        );
+                        --sequence.Count;
+                    }
+                }
+            }
+
+            template<class TEvent>
+            void SweepRemoteHandoffExpiryLocked(
+                MonotonicTimestamp now
+            ) noexcept {
+                if constexpr (
+                    TPlan::template RemoteHandoffCapacity<TEvent> != 0U &&
+                    TPlan::template SupportsTimedRetention<TEvent>
+                ) {
+                    constexpr auto capacity = TPlan::template RemoteHandoffCapacity<TEvent>;
+                    auto& sequence = StateFor<TEvent>().Outbound;
+                    const auto count = static_cast<std::size_t>(sequence.Count);
+                    const auto head = static_cast<std::size_t>(sequence.Head);
+
+                    for (std::size_t offset = 0U; offset < count; ++offset) {
+                        auto& slot = sequence.Slots[(head + offset) % capacity];
+                        if (
+                            slot.Occupied &&
+                            !slot.InFlight &&
+                            slot.Deadline.Nanoseconds() != 0U &&
+                            now >= slot.Deadline
+                        ) {
+                            slot.Terminal = true;
+                        }
+                    }
+                    AdvanceRemoteHandoffHeadLocked<TEvent>();
+                } else {
+                    static_cast<void>(now);
+                }
+            }
+
+            template<class TEvent>
+            [[nodiscard]] std::size_t ReserveRemoteHandoffLocked(
+                const TEvent& event,
+                MonotonicTimestamp deadline
+            ) noexcept {
+                constexpr auto capacity = TPlan::template RemoteHandoffCapacity<TEvent>;
+
+                if constexpr (capacity == 0U) {
+                    static_cast<void>(event);
+                    static_cast<void>(deadline);
+                    return 0U;
+                } else {
+                    auto& sequence = StateFor<TEvent>().Outbound;
+                    if (static_cast<std::size_t>(sequence.Count) >= capacity) {
+                        return capacity;
+                    }
+
+                    const auto index = (
+                        static_cast<std::size_t>(sequence.Head) +
+                        static_cast<std::size_t>(sequence.Count)
+                    ) % capacity;
+                    auto& slot = sequence.Slots[index];
+
+                    if (
+                        slot.Occupied ||
+                        slot.Generation == std::numeric_limits<std::uint32_t>::max()
+                    ) {
+                        return capacity;
+                    }
+
+                    ++slot.Generation;
+                    slot.EventView = &event;
+                    slot.Deadline = deadline;
+                    slot.Occupied = true;
+                    slot.Terminal = false;
+                    slot.InFlight = false;
+                    ++sequence.Count;
+                    return index;
+                }
+            }
+
+            // Integration quiesce.
+
+            template<std::size_t TIndex = 0U>
+            void CancelIntegrationReservationsLocked() noexcept {
+                if constexpr (TIndex < PrimitiveTypes::Count) {
+                    using TEvent = typename Detail::TypeAt<
+                        PrimitiveTypes,
+                        TIndex
+                    >::Type;
+
+                    for (
+                        std::size_t index = 0U;
+                        index < Record<TEvent>::MaximumInstances;
+                        ++index
+                    ) {
+                        auto& ingress = IngressSlotAt<TEvent>(index);
+                        if (ingress.Reserved) {
+                            // The decoder may be populating its exclusive destination
+                            // outside this mutex. Defer destruction to its Commit/Abort.
+                            ingress.Cancelled = true;
+                        }
+                    }
+
+                    if constexpr (TPlan::template RemoteHandoffCapacity<TEvent> != 0U) {
+                        auto& sequence = StateFor<TEvent>().Outbound;
+                        constexpr auto capacity =
+                            TPlan::template RemoteHandoffCapacity<TEvent>;
+                        const auto count = static_cast<std::size_t>(sequence.Count);
+                        const auto head = static_cast<std::size_t>(sequence.Head);
+
+                        for (std::size_t offset = 0U; offset < count; ++offset) {
+                            auto& slot = sequence.Slots[(head + offset) % capacity];
+                            if (slot.Occupied && !slot.InFlight) {
+                                slot.Terminal = true;
+                            }
+                        }
+                        AdvanceRemoteHandoffHeadLocked<TEvent>();
+                    }
+
+                    CancelIntegrationReservationsLocked<TIndex + 1U>();
+                }
+            }
+
+            template<std::size_t TIndex = 0U>
+            [[nodiscard]] bool IntegrationQuiescentLocked() noexcept {
+                if constexpr (TIndex >= PrimitiveTypes::Count) {
+                    return true;
+                } else {
+                    using TEvent = typename Detail::TypeAt<
+                        PrimitiveTypes,
+                        TIndex
+                    >::Type;
+                    bool quiet = true;
+
+                    for (
+                        std::size_t index = 0U;
+                        index < Record<TEvent>::MaximumInstances;
+                        ++index
+                    ) {
+                        quiet = quiet && !IngressSlotAt<TEvent>(index).Reserved;
+                    }
+
+                    if constexpr (TPlan::template RemoteHandoffCapacity<TEvent> != 0U) {
+                        quiet = quiet &&
+                            StateFor<TEvent>().Outbound.Count == 0U;
+                    }
+
+                    return quiet &&
+                        IntegrationQuiescentLocked<TIndex + 1U>();
                 }
             }
 
@@ -871,11 +1179,7 @@ namespace ESPressio::Event {
 
                 if (!record.HasPendingRecipients()) {
                     if constexpr (TPlan::template IsQueue<TEvent>) {
-                        const auto pendingBefore = QueuePendingCount<TEvent>();
-                        RemovePendingQueueOccurrence<TEvent>(
-                            selected,
-                            pendingBefore
-                        );
+                        RemovePendingQueueOccurrence<TEvent>(selected);
                     } else {
                         state.Admission.Pending = Index::Invalid();
                     }
@@ -1099,6 +1403,7 @@ namespace ESPressio::Event {
                     }
                 }
 
+                _integrationOpen = true;
                 _initialized = true;
                 return InitializationResult::Initialized;
             }
@@ -1106,6 +1411,23 @@ namespace ESPressio::Event {
             /// Indicates whether Event Runtime initialization has completed successfully.
             [[nodiscard]] bool IsInitialized() const noexcept {
                 return _initialized;
+            }
+
+            /// Stops new integration reservations and cancels every non-in-flight capability.
+            /// Ingress storage remains owned until its decoder subsequently commits or aborts.
+            void BeginIntegrationQuiesce() noexcept {
+                Lock();
+                _integrationOpen = false;
+                CancelIntegrationReservationsLocked();
+                Unlock();
+            }
+
+            /// Reports whether all unpublished ingress and ordered outbound slots are released.
+            [[nodiscard]] bool IsIntegrationQuiescent() noexcept {
+                Lock();
+                const bool result = IntegrationQuiescentLocked();
+                Unlock();
+                return result;
             }
 
             // Runtime subscription control.
@@ -1173,7 +1495,6 @@ namespace ESPressio::Event {
 
                 if constexpr (TPlan::template IsQueue<TEvent>) {
                     auto current = state.Admission.Pending.Head();
-                    std::size_t pending = QueuePendingCount<TEvent>();
                     std::size_t visited = 0U;
 
                     while (
@@ -1189,11 +1510,7 @@ namespace ESPressio::Event {
                             );
 
                             if (!record.HasPendingRecipients()) {
-                                RemovePendingQueueOccurrence<TEvent>(
-                                    current,
-                                    pending
-                                );
-                                --pending;
+                                RemovePendingQueueOccurrence<TEvent>(current);
 
                                 if (record.ActiveBorrowCount() == 0U) {
                                     ReleaseOccurrence<TEvent>(current);
@@ -1270,19 +1587,433 @@ namespace ESPressio::Event {
                 return result;
             }
 
+            // Transactional unpublished remote ingress.
+
+            template<class TEvent, class TRetention = UntilHandoff>
+            requires EventType<TEvent> &&
+                TPlan::template IsDeployed<TEvent> &&
+                RetentionRequest<TRetention> &&
+                std::is_nothrow_default_constructible_v<TEvent> &&
+                (
+                    TPlan::template SupportsTimedRetention<TEvent> ||
+                    std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>
+                )
+            [[nodiscard]] IngressReservationResult<TEvent, Runtime> PrepareIngress(
+                TRetention retention = {}
+            ) noexcept {
+                if (!_initialized) {
+                    return IngressReservationResult<TEvent, Runtime>(
+                        ReservationFailure::RuntimeUnavailable
+                    );
+                }
+
+                const auto normalized = Detail::NormalizeRetention(retention);
+                if (normalized.Expired) {
+                    return IngressReservationResult<TEvent, Runtime>(
+                        ReservationFailure::Expired
+                    );
+                }
+
+                Lock();
+                if (!_integrationOpen) {
+                    Unlock();
+                    return IngressReservationResult<TEvent, Runtime>(
+                        ReservationFailure::RuntimeUnavailable
+                    );
+                }
+
+                const auto now = TPlan::template SupportsTimedRetention<TEvent>
+                    ? Clock::MonotonicNow()
+                    : MonotonicTimestamp{};
+
+                if (
+                    normalized.Deadline.Nanoseconds() != 0U &&
+                    now >= normalized.Deadline
+                ) {
+                    Unlock();
+                    return IngressReservationResult<TEvent, Runtime>(
+                        ReservationFailure::Expired
+                    );
+                }
+
+                SweepExpired<TEvent>(now);
+                bool shared = false;
+
+                if constexpr (TPlan::template IsQueue<TEvent>) {
+                    auto& admission = StateFor<TEvent>().Admission;
+                    shared =
+                        admission.DedicatedUsed.Count() >=
+                        TPlan::template DedicatedPendingCapacity<TEvent>;
+
+                    if (
+                        shared &&
+                        _sharedPending.Count() >= TPlan::SharedPendingCapacity
+                    ) {
+                        Unlock();
+                        return IngressReservationResult<TEvent, Runtime>(
+                            ReservationFailure::NoCapacity
+                        );
+                    }
+                }
+
+                auto& pool = PoolFor<TEvent>();
+                typename std::remove_reference_t<decltype(pool)>::DedicatedIndex memoryIndex;
+                const auto acquired = pool.AcquireDedicated(
+                    memoryIndex,
+                    Detail::UnpublishedOccurrenceTag{},
+                    normalized.Deadline
+                );
+
+                if (acquired == Memory::DedicatedObjectPoolAcquisitionResult::CapacityUnavailable) {
+                    Unlock();
+                    return IngressReservationResult<TEvent, Runtime>(
+                        ReservationFailure::NoCapacity
+                    );
+                }
+
+                if (acquired != Memory::DedicatedObjectPoolAcquisitionResult::Succeeded) {
+                    InfrastructureFailure();
+                }
+
+                const auto index = static_cast<std::size_t>(memoryIndex.Value());
+                auto& slot = IngressSlotAt<TEvent>(index);
+
+                if (
+                    slot.Reserved ||
+                    slot.Generation == std::numeric_limits<std::uint32_t>::max()
+                ) {
+                    const auto released = pool.ReleaseDedicated(memoryIndex);
+                    if (released != Memory::DedicatedObjectPoolReleaseResult::Released) {
+                        InfrastructureFailure();
+                    }
+                    Unlock();
+                    return IngressReservationResult<TEvent, Runtime>(
+                        ReservationFailure::NoCapacity
+                    );
+                }
+
+                ++slot.Generation;
+                slot.Reserved = true;
+                slot.Cancelled = false;
+                slot.SharedPending = shared;
+
+                if constexpr (TPlan::template IsQueue<TEvent>) {
+                    if (shared) {
+                        _sharedPending.Increment();
+                    } else {
+                        StateFor<TEvent>().Admission.DedicatedUsed.Increment();
+                    }
+                }
+
+                const auto generation = slot.Generation;
+                Unlock();
+                return IngressReservationResult<TEvent, Runtime>(
+                    *this,
+                    index,
+                    generation
+                );
+            }
+
+            template<class TEvent>
+            [[nodiscard]] TEvent& IngressValue(
+                std::size_t index,
+                std::uint32_t generation
+            ) noexcept {
+                Lock();
+                if (!MatchesIngressLocked<TEvent>(index, generation)) {
+                    InfrastructureFailure();
+                }
+                auto* value = &RecordAt<TEvent>(
+                    Record<TEvent>::OccurrenceIndex::FromUnchecked(index)
+                ).Value();
+                Unlock();
+                return *value;
+            }
+
+            template<class TEvent>
+            [[nodiscard]] DispatchResult CommitIngress(
+                std::size_t index,
+                std::uint32_t generation
+            ) noexcept {
+                Lock();
+                if (!MatchesIngressLocked<TEvent>(index, generation)) {
+                    Unlock();
+                    return DispatchResult::RuntimeUnavailable;
+                }
+
+                if (!_integrationOpen || IngressSlotAt<TEvent>(index).Cancelled) {
+                    AbortIngressLocked<TEvent>(index);
+                    Unlock();
+                    return DispatchResult::RuntimeUnavailable;
+                }
+
+                const auto eventIndex =
+                    Record<TEvent>::OccurrenceIndex::FromUnchecked(index);
+                auto& slot = IngressSlotAt<TEvent>(index);
+                auto& record = RecordAt<TEvent>(eventIndex);
+                const auto now = TPlan::template SupportsTimedRetention<TEvent>
+                    ? Clock::MonotonicNow()
+                    : MonotonicTimestamp{};
+
+                if (record.IsExpired(now)) {
+                    AbortIngressLocked<TEvent>(index);
+                    Unlock();
+                    return DispatchResult::Expired;
+                }
+
+                SweepExpired<TEvent>(now);
+                auto recipients = SnapshotSubscriptions<TEvent>();
+
+                if (!recipients.IsAnySet()) {
+                    AbortIngressLocked<TEvent>(index);
+                    Unlock();
+                    return DispatchResult::Accepted;
+                }
+
+                record.PublishUnpublished(
+                    recipients,
+                    record.ExpiresAt(),
+                    slot.SharedPending
+                );
+                auto& state = StateFor<TEvent>();
+
+                if constexpr (TPlan::template IsQueue<TEvent>) {
+                    auto records = Records<TEvent>();
+                    const auto pushed = state.Admission.Pending.Push(
+                        records,
+                        eventIndex
+                    );
+                    if (pushed != BoundedTopology::IntrusiveQueuePushResult::Succeeded) {
+                        InfrastructureFailure();
+                    }
+                } else {
+                    auto& pending = state.Admission.Pending;
+                    if (pending.IsValid()) {
+                        auto& old = RecordAt<TEvent>(pending);
+                        old.PendingRecipients().ClearAll();
+                        const auto oldIndex = pending;
+                        if (old.ActiveBorrowCount() == 0U) {
+                            ReleaseOccurrence<TEvent>(oldIndex);
+                        }
+                    }
+                    pending = eventIndex;
+                }
+
+                slot.Reserved = false;
+                slot.Cancelled = false;
+                slot.SharedPending = false;
+                Unlock();
+                WakeRecipients<TEvent>(recipients);
+                return DispatchResult::Accepted;
+            }
+
+            template<class TEvent>
+            void AbortIngress(
+                std::size_t index,
+                std::uint32_t generation
+            ) noexcept {
+                Lock();
+                if (MatchesIngressLocked<TEvent>(index, generation)) {
+                    AbortIngressLocked<TEvent>(index);
+                }
+                Unlock();
+            }
+
             // Combined local/remote scoped dispatch.
 
-            /// Performs independent local Event admission and one bounded external remote handoff under Event linearization.
-            /// @tparam TEvent Locally deployed Event payload Type.
-            /// @tparam TRetention Supported retention request Type permitted by the local deployment.
-            /// @tparam TRemoteOperation External bounded remote-domain operation Type.
-            /// @param event Immutable Event payload presented to both domains.
-            /// @param retention Common per-Dispatch retention request.
-            /// @param remoteOperation External operation invoked exactly once when the common expiry gate passes.
-            template<class TEvent, class TRetention = UntilHandoff, class TRemoteOperation>
+            /// Reserves one bounded ordered outbound handoff opportunity.
+            template<class TEvent, class TRetention = UntilHandoff>
             requires EventType<TEvent> &&
-                RetentionRequest<TRetention> &&
                 TPlan::template IsDeployed<TEvent> &&
+                RetentionRequest<TRetention> &&
+                (
+                    TPlan::template SupportsTimedRetention<TEvent> ||
+                    std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>
+                )
+            [[nodiscard]] RemoteHandoffReservationResult<TEvent, Runtime>
+            PrepareRemoteHandoff(
+                const TEvent& event,
+                TRetention retention = {}
+            ) noexcept {
+                if (!_initialized) {
+                    return RemoteHandoffReservationResult<TEvent, Runtime>(
+                        ReservationFailure::RuntimeUnavailable
+                    );
+                }
+
+                const auto normalized = Detail::NormalizeRetention(retention);
+                if (normalized.Expired) {
+                    return RemoteHandoffReservationResult<TEvent, Runtime>(
+                        ReservationFailure::Expired
+                    );
+                }
+
+                Lock();
+                if (!_integrationOpen) {
+                    Unlock();
+                    return RemoteHandoffReservationResult<TEvent, Runtime>(
+                        ReservationFailure::RuntimeUnavailable
+                    );
+                }
+
+                const auto now = TPlan::template SupportsTimedRetention<TEvent>
+                    ? Clock::MonotonicNow()
+                    : MonotonicTimestamp{};
+
+                if (
+                    normalized.Deadline.Nanoseconds() != 0U &&
+                    now >= normalized.Deadline
+                ) {
+                    Unlock();
+                    return RemoteHandoffReservationResult<TEvent, Runtime>(
+                        ReservationFailure::Expired
+                    );
+                }
+
+                SweepRemoteHandoffExpiryLocked<TEvent>(now);
+                constexpr auto capacity =
+                    TPlan::template RemoteHandoffCapacity<TEvent>;
+
+                if constexpr (capacity == 0U) {
+                    Unlock();
+                    return RemoteHandoffReservationResult<TEvent, Runtime>(
+                        ReservationFailure::NoCapacity
+                    );
+                } else {
+                    const auto index = ReserveRemoteHandoffLocked(
+                        event,
+                        normalized.Deadline
+                    );
+                    if (index == capacity) {
+                        Unlock();
+                        return RemoteHandoffReservationResult<TEvent, Runtime>(
+                            ReservationFailure::NoCapacity
+                        );
+                    }
+
+                    const auto generation =
+                        StateFor<TEvent>().Outbound.Slots[index].Generation;
+                    Unlock();
+                    return RemoteHandoffReservationResult<TEvent, Runtime>(
+                        *this,
+                        index,
+                        generation
+                    );
+                }
+            }
+
+            template<class TEvent, class TRetention = UntilHandoff>
+            requires (!std::is_lvalue_reference_v<TEvent>)
+            auto PrepareRemoteHandoff(
+                TEvent&&,
+                TRetention = {}
+            ) noexcept = delete;
+
+            /// Attempts the sequencer head and invokes the adapter outside Event synchronization.
+            template<class TEvent, class TRemoteOperation>
+            requires (TPlan::template RemoteHandoffCapacity<TEvent> > 0U)
+            [[nodiscard]] auto TryCommitRemoteHandoff(
+                std::size_t index,
+                std::uint32_t generation,
+                TRemoteOperation& remoteOperation
+            ) noexcept {
+                using RemoteResult = decltype(
+                    remoteOperation(std::declval<const TEvent&>())
+                );
+                static_assert(
+                    noexcept(remoteOperation(std::declval<const TEvent&>())),
+                    "Event remote handoff must be non-throwing"
+                );
+                static_assert(
+                    !std::is_void_v<RemoteResult> &&
+                    std::is_nothrow_move_constructible_v<RemoteResult> &&
+                    std::is_nothrow_destructible_v<RemoteResult>,
+                    "Event remote handoff requires a non-throwing movable result"
+                );
+
+                Lock();
+                if (!MatchesRemoteHandoffLocked<TEvent>(index, generation)) {
+                    Unlock();
+                    return OrderedHandoffAttempt<RemoteResult>(
+                        OrderedHandoffAttemptState::RuntimeUnavailable
+                    );
+                }
+
+                auto& sequence = StateFor<TEvent>().Outbound;
+                auto& slot = sequence.Slots[index];
+                const auto now = TPlan::template SupportsTimedRetention<TEvent>
+                    ? Clock::MonotonicNow()
+                    : MonotonicTimestamp{};
+
+                if (
+                    slot.Deadline.Nanoseconds() != 0U &&
+                    now >= slot.Deadline
+                ) {
+                    slot.Terminal = true;
+                    AdvanceRemoteHandoffHeadLocked<TEvent>();
+                    Unlock();
+                    return OrderedHandoffAttempt<RemoteResult>(
+                        OrderedHandoffAttemptState::Expired
+                    );
+                }
+
+                SweepRemoteHandoffExpiryLocked<TEvent>(now);
+                const auto head = static_cast<std::size_t>(sequence.Head);
+                if (index != head || slot.InFlight) {
+                    Unlock();
+                    return OrderedHandoffAttempt<RemoteResult>(
+                        OrderedHandoffAttemptState::EarlierPending
+                    );
+                }
+
+                slot.InFlight = true;
+                const auto* event = slot.EventView;
+                Unlock();
+
+                auto result = remoteOperation(*event);
+
+                Lock();
+                if (!MatchesRemoteHandoffLocked<TEvent>(index, generation)) {
+                    InfrastructureFailure();
+                }
+                auto& completed = StateFor<TEvent>().Outbound.Slots[index];
+                completed.InFlight = false;
+                completed.Terminal = true;
+                AdvanceRemoteHandoffHeadLocked<TEvent>();
+                Unlock();
+
+                return OrderedHandoffAttempt<RemoteResult>(
+                    Memory::OwnershipTransfer::Move(result)
+                );
+            }
+
+            /// Resolves one uncommitted handoff opportunity as a terminal skip.
+            template<class TEvent>
+            void AbortRemoteHandoff(
+                std::size_t index,
+                std::uint32_t generation
+            ) noexcept {
+                if constexpr (TPlan::template RemoteHandoffCapacity<TEvent> == 0U) {
+                    static_cast<void>(index);
+                    static_cast<void>(generation);
+                } else {
+                    Lock();
+                    if (MatchesRemoteHandoffLocked<TEvent>(index, generation)) {
+                        auto& slot = StateFor<TEvent>().Outbound.Slots[index];
+                        if (!slot.InFlight) {
+                            slot.Terminal = true;
+                            AdvanceRemoteHandoffHeadLocked<TEvent>();
+                        }
+                    }
+                    Unlock();
+                }
+            }
+
+            /// Admits locally first and reserves the independent remote opportunity at the same linearization.
+            template<class TEvent, class TRetention = UntilHandoff>
+            requires EventType<TEvent> &&
+                TPlan::template IsDeployed<TEvent> &&
+                RetentionRequest<TRetention> &&
                 (
                     TPlan::template SupportsTimedRetention<TEvent> ||
                     std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>
@@ -1290,30 +2021,12 @@ namespace ESPressio::Event {
             [[nodiscard]] auto Dispatch(
                 LocalAndRemote,
                 const TEvent& event,
-                TRetention retention,
-                TRemoteOperation& remoteOperation
+                TRetention retention = {}
             ) noexcept {
-                using RemoteResult = decltype(remoteOperation(event));
-
-                static_assert(
-                    noexcept(remoteOperation(event)),
-                    "LocalAndRemote Event handoff must be non-throwing"
-                );
-
-                static_assert(
-                    !std::is_void_v<RemoteResult>,
-                    "LocalAndRemote Event handoff requires an observable remote provider result"
-                );
-
+                using RemoteResult = RemoteHandoffReservationResult<TEvent, Runtime>;
                 static_assert(
                     std::is_nothrow_copy_constructible_v<TEvent>,
                     "LocalAndRemote Event Dispatch requires nothrow local occurrence copying"
-                );
-
-                static_assert(
-                    TPlan::template SupportsTimedRetention<TEvent> ||
-                    std::is_same_v<std::remove_cvref_t<TRetention>, UntilHandoff>,
-                    "Timed retention is unavailable for an UntilHandoffOnly local Event deployment"
                 );
 
                 if (!_initialized) {
@@ -1322,30 +2035,77 @@ namespace ESPressio::Event {
 
                 Lock();
                 const auto normalized = Detail::NormalizeRetention(retention);
-
                 if (normalized.Expired) {
                     Unlock();
-
                     return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
                         DispatchResult::Expired,
-                        RemoteDispatchAttempt<RemoteResult>{}
+                        RemoteResult(ReservationFailure::Expired)
                     );
                 }
 
-                const auto local = DispatchLocalLocked(
-                    event,
-                    normalized
-                );
-                auto remote = RemoteDispatchAttempt<RemoteResult>{
-                    remoteOperation(event)
-                };
-                Unlock();
+                const auto local = DispatchLocalLocked(event, normalized);
+                if (!_integrationOpen) {
+                    Unlock();
+                    return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
+                        local,
+                        RemoteResult(ReservationFailure::RuntimeUnavailable)
+                    );
+                }
 
-                return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
-                    local,
-                    Memory::OwnershipTransfer::Move(remote)
-                );
+                const auto now = TPlan::template SupportsTimedRetention<TEvent>
+                    ? Clock::MonotonicNow()
+                    : MonotonicTimestamp{};
+                if (
+                    normalized.Deadline.Nanoseconds() != 0U &&
+                    now >= normalized.Deadline
+                ) {
+                    Unlock();
+                    return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
+                        local,
+                        RemoteResult(ReservationFailure::Expired)
+                    );
+                }
+
+                SweepRemoteHandoffExpiryLocked<TEvent>(now);
+                constexpr auto capacity =
+                    TPlan::template RemoteHandoffCapacity<TEvent>;
+
+                if constexpr (capacity == 0U) {
+                    Unlock();
+                    return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
+                        local,
+                        RemoteResult(ReservationFailure::NoCapacity)
+                    );
+                } else {
+                    const auto index = ReserveRemoteHandoffLocked(
+                        event,
+                        normalized.Deadline
+                    );
+                    if (index == capacity) {
+                        Unlock();
+                        return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
+                            local,
+                            RemoteResult(ReservationFailure::NoCapacity)
+                        );
+                    }
+
+                    const auto generation =
+                        StateFor<TEvent>().Outbound.Slots[index].Generation;
+                    Unlock();
+                    return LocalAndRemoteDispatchResult<DispatchResult, RemoteResult>(
+                        local,
+                        RemoteResult(*this, index, generation)
+                    );
+                }
             }
+
+            template<class TEvent, class TRetention = UntilHandoff>
+            requires (!std::is_lvalue_reference_v<TEvent>)
+            auto Dispatch(
+                LocalAndRemote,
+                TEvent&&,
+                TRetention = {}
+            ) noexcept = delete;
 
             // Local shorthand and inbound facade.
 

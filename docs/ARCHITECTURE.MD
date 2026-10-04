@@ -14,7 +14,7 @@ The Event payload Type is the Event Primitive itself. Generic semantic identity 
 
 Event owns family declarations, local admission, subscription state, retained occurrence semantics, bounded pending entitlement, expiry, Listener claims and callback handoff. `EDP-Memory` owns physical occurrence storage/lifetime. `EDP-BoundedTopology` owns compact finite identity/membership/FIFO mechanics. `EDP-Threading` owns Dedicated Threads, their wake path and ordinary-context mutex provider. `EDP-Clock` owns canonical monotonic time.
 
-Event owns no native thread, stack, allocator, codec, route, retry, connection, acknowledgement, transport queue or serialized representation. Schema identity is intrinsic to the Primitive Type; encoding remains outside Event.
+Event owns no native thread, stack, allocator, codec, route, retry, connection, acknowledgement, transport payload queue or serialized representation. It owns only bounded transactional ingress backing and per-Type outbound ordering metadata. Schema identity is intrinsic to the Primitive Type; encoding remains outside Event and runs without the Event mutex.
 
 ## Compile-time family plan
 
@@ -24,7 +24,7 @@ Outbound-only Event Types referenced only by an external Transport binding are n
 
 ## Runtime synchronization
 
-One local Event Runtime uses one non-recursive ordinary-context mutex. Admission, subscription mutation, pending-recipient mutation, Queue/NewestOnly topology, expiry cleanup, active-borrow accounting and Listener claims linearize through this mutex. Listener callbacks always execute outside the mutex.
+One local Event Runtime uses one non-recursive ordinary-context mutex. Admission, subscription mutation, pending-recipient mutation, Queue/NewestOnly topology, expiry cleanup, active-borrow accounting, ingress reservation metadata, outbound sequencing and Listener claims linearize through this mutex. Listener callbacks, decoder population and outbound adapter calls always execute outside the mutex.
 
 ## Delivery model
 

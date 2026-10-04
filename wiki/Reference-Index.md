@@ -13,5 +13,6 @@ Every maintained production header under `./src` is represented below. Reference
 - [`src/event/MemoryPlan.hpp`](Reference-event-MemoryPlan) — Planner-derived Memory pool specification.
 - [`src/event/Occurrence.hpp`](Reference-event-Occurrence) — Occurrence layout/lifetime/recipient/borrow contract.
 - [`src/event/Planner.hpp`](Reference-event-Planner) — Family planner, normalized topology and resources.
+- [`src/event/Reservation.hpp`](Reference-event-Reservation) — Transactional ingress, ordered egress and remote Event operation capabilities.
 - [`src/event/Retention.hpp`](Reference-event-Retention) — Common retention normalization.
 - [`src/event/Runtime.hpp`](Reference-event-Runtime) — Admission, subscriptions, delivery, expiry and scoped Runtime.

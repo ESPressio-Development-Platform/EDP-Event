@@ -31,6 +31,10 @@ Private EBO base controlling intrusive FIFO linkage.
 - nonqueued specialization retains no state;
 - queued specialization retains one `Next` strong occurrence index, default Invalid, used by `BoundedTopology::IntrusiveQueue`.
 
+## `Detail::QueueEntitlementStorage<TQueued>`
+
+Private EBO base. Queue records retain one Boolean identifying exact SharedPending ownership; NewestOnly retains no state. This makes entitlement release correct under arbitrary removal order.
+
 ## `Detail::BorrowStorage<TListeners,THasListeners>` — PRIVATE IMPLEMENTATION
 
 Private EBO base controlling active callback borrow count. The zero-listener specialization retains no state; the positive-listener specialization aliases minimum-width `Storage`, retains authoritative member `Active`, returns it through `Count()`, increments after a successful claim, and decrements after callback return.
@@ -58,15 +62,19 @@ Nested metadata:
 - `ListenerIndex` — strong compact Type-local Listener identity;
 - `ListenerSet` — one-bit-per-Listener set used for pending recipients.
 
-Private compile-time aliases `DeploymentType`, `MaximumInstancesValue`, `ListenerCountValue`, `OccurrenceIndexType`, `ListenerIndexType`, and `ListenerSetType` derive exact internal layout vocabulary. Private bases `ExpiryBase`, `QueueBase`, and `BorrowBase` select conditional deadline/Queue/borrow state. `_event` is the retained payload and `_pending` is the authoritative pending-recipient snapshot.
+Private aliases derive exact internal layout vocabulary. Conditional bases select deadline, Queue link, borrow and Queue-entitlement state. `_event` is the retained or unpublished destination and `_pending` is empty until transactional ingress commit or contains the authoritative recipient snapshot.
 
 ## Construction
 
-The templated constructor materializes the payload, recipient snapshot and normalized deadline. Runtime constrains construction to nothrow paths so `DispatchResult` needs no construction-failure state.
+The templated constructor materializes an admitted payload, recipient snapshot and deadline. The `UnpublishedOccurrenceTag` constructor instead default-constructs a decoder destination with no recipients. Runtime constrains both paths to nothrow construction.
 
 ## `ReplaceUnborrowed(...)`
 
 NewestOnly-only replacement path used when the old pending occurrence has no active borrow. It destroys and reconstructs the payload in the existing physical slot exclusively through `EDP-Memory::ObjectLifetime`, then replaces recipient/deadline state.
+
+## Transactional publication and entitlement
+
+`PublishUnpublished` installs the commit-time recipient snapshot/deadline and exact Queue entitlement without reconstructing the populated payload. `SetQueueEntitlement` and `ConsumesSharedPending` record/query whether a queued occurrence consumes SharedPending.
 
 ## Payload/recipient accessors
 

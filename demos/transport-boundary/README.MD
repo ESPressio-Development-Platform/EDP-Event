@@ -1,6 +1,6 @@
 # transport-boundary
 
-LocalAndRemote/RemoteOnly scoped handoff through a fake external Transport and typed inbound ingress.
+Staged LocalAndRemote ordered handoff, direct RemoteOnly dispatch, and transactional unpublished ingress through a fake external Transport.
 
 Targets:
 

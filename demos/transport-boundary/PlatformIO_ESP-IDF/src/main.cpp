@@ -108,7 +108,8 @@ namespace Demo {
             BoundaryEvent,
             2U,
             Event::Queue<2U>,
-            Event::UntilHandoffOnly
+            Event::UntilHandoffOnly,
+            1U
         >,
         Event::Observe<
             ListenerThread,
@@ -319,7 +320,7 @@ namespace Demo {
     }
 
 
-    /// Runs local/remote scoped dispatch plus inbound LocalOnly ingress.
+    /// Runs staged local/remote handoff plus transactional inbound admission.
     Result Run() {
         MemoryResourceProvider resource;
         MutexProvider memoryMutex;
@@ -424,15 +425,23 @@ namespace Demo {
         auto both = events.Dispatch(
             Event::LocalAndRemote{},
             event,
-            Event::UntilHandoff{},
-            transport
+            Event::UntilHandoff{}
         );
-
-        const auto* bothRemoteResult = both.Remote().ResultIfPresent();
 
         if (
             both.Local() != Event::DispatchResult::Accepted ||
-            !both.Remote().WasAttempted() ||
+            !both.Remote().Accepted()
+        ) {
+            return Result::LocalAndRemoteFailed;
+        }
+
+        auto reservation =
+            std::move(both.Remote()).TakeReservation();
+        auto remoteAttempt = reservation.TryCommit(transport);
+        const auto* bothRemoteResult = remoteAttempt.ResultIfPresent();
+
+        if (
+            remoteAttempt.GetState() != Event::OrderedHandoffAttemptState::Attempted ||
             bothRemoteResult == nullptr ||
             *bothRemoteResult != TransportResult::Accepted ||
             transport.Calls.load(
@@ -495,11 +504,21 @@ namespace Demo {
             return Result::RemoteOnlyFailed;
         }
 
-        if (
-            events.Ingress(
-                BoundaryEvent{99}
-            ) != Event::DispatchResult::Accepted
-        ) {
+        Event::InboundAdmission<
+            BoundaryEvent,
+            EventRuntime
+        > inbound(events);
+        auto ingressResult = inbound.Prepare();
+
+        if (!ingressResult.Accepted()) {
+            return Result::IngressFailed;
+        }
+
+        auto ingress =
+            std::move(ingressResult).TakeReservation();
+        ingress.Value().Value = 99;
+
+        if (ingress.Commit() != Event::DispatchResult::Accepted) {
             return Result::IngressFailed;
         }
 

@@ -9,7 +9,7 @@ Runtime realizes one normalized local Event topology over application-owned Memo
 
 `AdmissionState<TPlan,TEvent,true>` owns one `BoundedTopology::IntrusiveQueue` of occurrence indices for Queue deployments. `AdmissionState<...,false>` owns only one pending occurrence index for NewestOnly.
 
-`TypeState<TPlan,TEvent>` retains the authoritative active subscription bitset plus that admission state.
+`TypeState<TPlan,TEvent>` retains the authoritative active subscription bitset, admission state, per-physical-slot ingress generations, and the optional per-Type ordered outbound sequencer. Queue state counts exact committed-plus-reserved dedicated entitlement; every queued record remembers whether it consumes dedicated or SharedPending capacity.
 
 `TypeStateTuple<TPlan,PrimitiveTypes>` materializes one TypeState per locally deployed Event Type.
 
@@ -25,11 +25,11 @@ Runtime realizes one normalized local Event topology over application-owned Memo
 
 Template parameters bind the normalized semantic plan, provider-resolution Architecture, already-owned Memory/Threading runtimes, selected Event ordinary mutex and exact typed callback providers. Runtime derives `PrimitiveTypes`, `Listeners`, `Observations`, Type state tuple and Listener cursor tuple.
 
-Private aliases `PrimitiveTypes`, `Listeners`, `Observations`, `TypeStates`, `ListenerCursors`, `RequiredCallbackProviders`, and `BoundCallbackProviders` encode normalized topology and exact provider/state tuples. Private retained provider members `_memory`, `_threading`, `_mutex` and `_callbacks` are non-owning. `_types`, `_listenerCursors`, `_sharedPending`, and `_initialized` are Event-owned bounded state.
+Private aliases encode normalized topology and exact provider/state tuples. Provider members are non-owning. `_types`, listener cursors, SharedPending use, initialization, and the integration-admission gate are Event-owned bounded state. Outbound slots retain only caller-owned immutable Event pointers, deadlines, generations and state flags; no duplicate payload storage exists.
 
 ## Infrastructure failure boundary
 
-`InfrastructureFailure()` terminates for impossible/terminal provider-coordination failure after topology is valid. Such failures are intentionally not folded into D20 `DispatchResult`, whose vocabulary remains `Accepted/NoCapacity/Expired`.
+`InfrastructureFailure()` terminates for impossible provider-coordination failure after topology is valid. Semantic publication can additionally return `RuntimeUnavailable` for stale generation or closed integration lifecycle.
 
 `Lock()` / `Unlock()` acquire/release the selected Threading ordinary mutex and treat provider failure as infrastructure failure.
 
@@ -41,7 +41,7 @@ Private aliases `PrimitiveTypes`, `Listeners`, `Observations`, `TypeStates`, `Li
 
 ## Queue/shared bookkeeping
 
-`QueuePendingCount<TEvent>()` performs a bounded traversal rather than retaining another count. `RemovePendingQueueOccurrence()` removes one occurrence and updates SharedPending accounting using pre-removal pending cardinality, preserving the fungible dedicated/shared entitlement rule.
+`RemovePendingQueueOccurrence()` removes one occurrence and releases the exact entitlement recorded in that occurrence, so out-of-order removal cannot misattribute dedicated versus SharedPending use.
 
 ## Expiry
 
@@ -89,13 +89,23 @@ Clears active subscription and cancels that Listener's still-pending interests a
 
 Require local deployment and typed retention compatibility. Execute common local admission under the Event mutex. Rvalue materialization is constrained to nonthrowing construction and only occurs after semantic/capacity viability is established.
 
-## `Dispatch(LocalAndRemote,event,retention,remoteOperation)`
+## `Dispatch(LocalAndRemote,event,retention)`
 
-Applies one common expiry precondition. If already expired, returns local `Expired` and remote `SkippedExpired` without entering either domain. Otherwise holds the Event linearization mutex while performing local admission and exactly one bounded external remote handoff, preserving independent local/native remote results. Local `NoCapacity` does not suppress a valid remote attempt and there is no rollback/fallback/quorum semantics.
+Applies one common expiry decision, performs local admission first, and independently reserves the same-Type outbound opportunity at that linearization. The result contains local `DispatchResult` and `RemoteHandoffReservationResult` separately. Local `NoCapacity` does not suppress remote reservation. The caller-owned Event must remain immutable until `TryCommit` or abort.
 
-## `Ingress(event,retention)`
+## `PrepareRemoteHandoff` / `TryCommitRemoteHandoff`
 
-Typed inbound facade equivalent to LocalOnly admission after an external Transport has already deserialized/validated the Event. It never automatically re-egresses inbound data.
+Preparation reserves one bounded ring slot. TryCommit fails fast with `EarlierPending` unless the generation-safe slot owns the head; the adapter always runs after the Event mutex is released. Completion, expiry and abort advance across contiguous terminal slots.
+
+## `PrepareIngress<TEvent>`
+
+Reserves one physical occurrence plus worst-case pending entitlement and returns an unpublished default-constructed destination. Commit revalidates integration lifecycle, generation and expiry, snapshots current subscribers, and atomically publishes Queue/NewestOnly state. Abort and empty-subscriber commit release all backing.
+
+`Ingress(event,retention)` remains the concise already-materialized LocalOnly facade.
+
+## Integration quiesce
+
+`BeginIntegrationQuiesce()` closes new reservations and cancels every non-in-flight ingress/outbound capability. Outbound skips are reclaimed immediately. An ingress reservation remains the exclusive owner of its unpublished destination until the decoder calls `Commit` or `Abort`; a cancelled commit returns `RuntimeUnavailable` and then releases backing. `IsIntegrationQuiescent()` reports when the bounded integration state is empty. Local pending delivery remains independent.
 
 ## `Drain<TThread>(maximumDeliveries)`
 
@@ -103,4 +113,4 @@ Services at most the explicit callback budget. For multi-Type Listeners it begin
 
 ## Additional private declaration coverage
 
-Internal templates use `TThreadIdentity` as the selected Dedicated Thread semantic identity and `TEventArgument` as a forwarding payload argument. `Storage` is the compact storage representation chosen for bounded counters/indices where present. `ListenerTypes` denotes the compile-time Listener TypeList consumed by Listener-state helpers; `ThreadIdentity` is the semantic identity extracted for one Listener specialization. `EventRecord` names the exact `OccurrenceRecord<TPlan,TEvent>` stored in a selected pool; `PoolSpec` names the corresponding Memory pool specification. `RemoteResult` names the native return Type of a selected outbound remote operation. `typeCount` is the compile-time number of observed Event Types used by bounded drain/fairness traversal. These are private compile-time/runtime implementation details and do not create independent ownership.
+Internal templates and aliases select exact listener, occurrence, pool, counter, reservation, sequencer and provider-result Types. They are bounded implementation details and create no hidden allocator, payload queue or Transport ownership.

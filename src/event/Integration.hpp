@@ -5,6 +5,7 @@
 
 #include "Deployment.hpp"
 #include "EventTypes.hpp"
+#include "Reservation.hpp"
 #include "Retention.hpp"
 
 namespace ESPressio::Event {

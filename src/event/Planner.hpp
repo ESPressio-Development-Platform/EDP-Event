@@ -24,14 +24,16 @@ namespace ESPressio::Event {
         /// @tparam TMaximumInstances Exact live occurrence capacity.
         /// @tparam TAdmission Admission policy Type.
         /// @tparam TRetention Local retention capability Type.
+        /// @tparam TRemoteHandoffCapacity Ordered outbound handoff capacity.
         template<
             class TEvent,
             std::size_t TMaximumInstances,
             class TAdmission,
-            class TRetention
+            class TRetention,
+            std::size_t TRemoteHandoffCapacity
         >
         struct IsDeploy<
-            Deploy<TEvent, TMaximumInstances, TAdmission, TRetention>
+            Deploy<TEvent, TMaximumInstances, TAdmission, TRetention, TRemoteHandoffCapacity>
         > : std::true_type {};
 
 
@@ -595,6 +597,12 @@ namespace ESPressio::Event {
         struct EligibleListeners final {};
 
 
+        /// Resource-plan tag identifying ordered outbound handoff slots for one Event Type.
+        /// @tparam TEvent Event payload Type owning the sequencer capacity.
+        template<class TEvent>
+        struct RemoteHandoffSlots final {};
+
+
         /// Resource-plan tag identifying family-wide logical SharedPending capacity.
         struct SharedPendingSlots final {};
 
@@ -649,6 +657,14 @@ namespace ESPressio::Event {
                 >::value
             >;
 
+            /// Per-deployment ordered outbound handoff capacity requirement.
+            /// @tparam TDeployment Deploy declaration being represented.
+            template<class TDeployment>
+            using RemoteHandoffRequirement = Primitives::ResourceRequirement<
+                RemoteHandoffSlots<typename TDeployment::Event>,
+                TDeployment::RemoteHandoffCapacity
+            >;
+
             /// Expands a deployment TypeList into one complete Primitives ResourcePlan.
             /// @tparam TList Deployment TypeList being expanded.
             template<class TList>
@@ -664,6 +680,7 @@ namespace ESPressio::Event {
                     OccurrenceRequirement<TExpandedDeployments>...,
                     PendingRequirement<TExpandedDeployments>...,
                     ListenerRequirement<TExpandedDeployments>...,
+                    RemoteHandoffRequirement<TExpandedDeployments>...,
                     Primitives::ResourceRequirement<
                         SharedPendingSlots,
                         TShared
@@ -838,6 +855,12 @@ namespace ESPressio::Event {
                 typename Deployment<TEvent>::Retention,
                 TimedRetention
             >;
+
+            /// Exact Type-local ordered outbound handoff capacity.
+            /// @tparam TEvent Locally deployed Event payload Type.
+            template<class TEvent>
+            static constexpr std::size_t RemoteHandoffCapacity =
+                Deployment<TEvent>::RemoteHandoffCapacity;
 
         };
 

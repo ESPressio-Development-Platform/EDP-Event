@@ -12,7 +12,7 @@ The schema requirement is independent of whether this deployment currently parti
 
 ## Local deployment
 
-`Deploy<TEvent, MaximumInstances, Admission, Retention>` declares one locally admissible Event Type. `MaximumInstances` is the exact maximum number of simultaneously live occurrences, including records retained only because a callback still borrows them. V1 maps this directly to EDP-Memory's compact dedicated capacity and therefore accepts 1..255.
+`Deploy<TEvent, MaximumInstances, Admission, Retention, RemoteHandoffs = 0>` declares one locally admissible Event Type. `MaximumInstances` is the exact maximum number of simultaneously live occurrences, including records retained only because a callback still borrows them. V1 maps this directly to EDP-Memory's compact dedicated capacity and therefore accepts 1..255. `RemoteHandoffs` is the exact 0..255 per-Type capacity of the local ordered outbound sequencer; zero compiles its storage away.
 
 Admission is either:
 

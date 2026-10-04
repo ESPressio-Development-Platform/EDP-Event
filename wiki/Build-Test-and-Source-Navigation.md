@@ -2,11 +2,11 @@
 
 ## Source
 
-`src/ESPressio_Event.hpp` is the umbrella header. `src/event/` contains focused family/deployment, planner, occurrence, runtime, bootstrap, Composition, retention and integration modules.
+`src/ESPressio_Event.hpp` is the umbrella header. `src/event/` contains focused family/deployment, planner, occurrence, runtime, bootstrap, Composition, retention, reservation and integration modules.
 
 ## Host validation
 
-Run `python3 tests/run_tests.py`. The runner compiles/executes planner, Runtime and layout tests, checks negative/compile-fail contracts and verifies standalone public-header compilability.
+Run `python3 tests/run_tests.py`. The runner compiles/executes planner, Runtime, layout and concurrency tests, checks negative/compile-fail contracts and verifies standalone public-header compilability.
 
 ## Platform/demo validation
 

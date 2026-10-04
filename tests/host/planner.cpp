@@ -46,7 +46,7 @@ namespace ESPressio::Bounded {
 } // ESPressio::Bounded
 
 using Topology = ESPressio::Primitives::Topology<
-    ESPressio::Event::Deploy<Test::EventA, 4U, ESPressio::Event::Queue<2U>, ESPressio::Event::TimedRetention>,
+    ESPressio::Event::Deploy<Test::EventA, 4U, ESPressio::Event::Queue<2U>, ESPressio::Event::TimedRetention, 3U>,
     ESPressio::Event::Deploy<Test::EventB, 2U, ESPressio::Event::NewestOnly, ESPressio::Event::UntilHandoffOnly>,
     ESPressio::Event::Observe<Test::ListenerA, Test::EventA>,
     ESPressio::Event::Observe<Test::ListenerB, Test::EventA>,
@@ -61,6 +61,8 @@ static_assert(Plan::Listeners::Count == 2U);
 static_assert(Plan::template EligibleListenerCount<Test::EventA> == 2U);
 static_assert(Plan::template EligibleListenerCount<Test::EventB> == 1U);
 static_assert(Plan::SharedPendingCapacity == 2U);
+static_assert(Plan::template RemoteHandoffCapacity<Test::EventA> == 3U);
+static_assert(Plan::template RemoteHandoffCapacity<Test::EventB> == 0U);
 static_assert(std::is_same_v<typename Plan::template Deployment<Test::EventA>::Admission, ESPressio::Event::Queue<2U>>);
 
 int main() { return 0; }

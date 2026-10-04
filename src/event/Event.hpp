@@ -9,4 +9,5 @@
 #include "MemoryPlan.hpp"
 #include "Occurrence.hpp"
 #include "Planner.hpp"
+#include "Reservation.hpp"
 #include "Runtime.hpp"

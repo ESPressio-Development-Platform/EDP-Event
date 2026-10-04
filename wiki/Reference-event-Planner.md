@@ -31,9 +31,9 @@ The Planner converts opaque Event-family declarations supplied through `EDP-Prim
 
 # Resource-plan vocabulary
 
-`OccurrenceInstances<TEvent>`, `DedicatedPendingSlots<TEvent>`, `EligibleListeners<TEvent>`, `SharedPendingSlots`, and `ListenerCount` are semantic resource-dimension tags.
+`OccurrenceInstances<TEvent>`, `DedicatedPendingSlots<TEvent>`, `EligibleListeners<TEvent>`, `RemoteHandoffSlots<TEvent>`, `SharedPendingSlots`, and `ListenerCount` are semantic resource-dimension tags.
 
-`MakeResourcePlan<TDeployList,TObserveList,TShared>` expands each deployment into decomposed `Primitives::ResourceRequirement` entries plus family-wide Shared Pending and unique Listener count. `OccurrenceRequirement<TDeployment>`, `PendingRequirement<TDeployment>`, and `ListenerRequirement<TDeployment>` map physical, logical-pending, and Listener dimensions. Nested `Expand<TList>` performs the variadic expansion and `Type` exposes the complete plan.
+`MakeResourcePlan<TDeployList,TObserveList,TShared>` expands each deployment into decomposed `Primitives::ResourceRequirement` entries plus family-wide Shared Pending and unique Listener count. Occurrence, pending, Listener, and remote-handoff requirements map the exact physical/logical dimensions. Nested `Expand<TList>` performs the variadic expansion and `Type` exposes the complete plan.
 
 # `Detail::NormalizedEventPlan<TDeclarations>`
 
@@ -57,7 +57,8 @@ Constants and variable templates:
 - `ObservationOrdinal<TThread,TEvent>` — declaration/provider binding ordinal;
 - `IsQueue<TEvent>` — admission-shape predicate;
 - `DedicatedPendingCapacity<TEvent>` — Queue dedicated entitlement, zero for NewestOnly;
-- `SupportsTimedRetention<TEvent>` — local timed-retention capability.
+- `SupportsTimedRetention<TEvent>` — local timed-retention capability;
+- `RemoteHandoffCapacity<TEvent>` — exact per-Type ordered outbound slot count.
 
 Aliases `Deployment<TEvent>`, `EligibleListenerTypes<TEvent>`, `ObservedEventTypes<TThread>` expose normalized relationships without runtime tables.
 

@@ -11,7 +11,10 @@ This header owns Event's public value, scope, retention-request and result vocab
 
 ## Operation result enums — PUBLIC API
 
-- `DispatchResult`: `Accepted` means local admission committed; `NoCapacity` means bounded local capacity was unavailable; `Expired` means the common retention precondition had already expired.
+- `DispatchResult`: `Accepted`, `NoCapacity`, `Expired`, and `RuntimeUnavailable` describe local publication.
+- `ReservationFailure`: `NoCapacity`, `Expired`, and `RuntimeUnavailable` describe absent ingress/outbound backing.
+- `OrderedHandoffAttemptState`: `Attempted`, `EarlierPending`, `Expired`, and `RuntimeUnavailable` describe one nonblocking sequencer attempt.
+- `RemoteEventTerminal`: `Admitted`, `AlreadyAdmitted`, `Refused`, `ExpiredNotAdmitted`, `CancelledNotAdmitted`, and `OutcomeUncertain` are the complete remote Event terminal vocabulary.
 - `SubscribeResult`: `Subscribed` means an inactive planned relation became active; `AlreadySubscribed` means it was already active.
 - `UnsubscribeResult`: `Unsubscribed` means an active relation became inactive; `NotSubscribed` means it was already inactive.
 - `InitializationResult`: `Initialized`, `AlreadyInitialized`, and `ProviderFailure` expose Runtime initialization outcomes.
@@ -56,7 +59,7 @@ This header owns Event's public value, scope, retention-request and result vocab
 
 ## `LocalAndRemoteDispatchResult<TLocalResult,TRemoteResult>` — PUBLIC STRUCTURED RESULT
 
-Private member `_local` owns the local outcome and `_remote` owns the remote attempt wrapper. Construction and move construction transfer both values through EDP-Memory ownership-transfer semantics. Copy operations and move assignment are deleted. mutable/const `Local()` expose the local result and mutable/const `Remote()` expose the remote wrapper.
+Private member `_local` owns the local outcome and `_remote` owns the independent remote-domain result, which may be a reservation result. Construction and move construction transfer both values through EDP-Memory ownership-transfer semantics. Copy operations and move assignment are deleted. mutable/const `Local()` and `Remote()` expose the outcomes without defining aggregate success.
 
 ## `DrainResult` — PUBLIC STRUCTURED RESULT
 

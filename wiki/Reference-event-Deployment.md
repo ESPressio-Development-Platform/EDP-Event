@@ -19,9 +19,9 @@ EventType deliberately does not repeat `System::SchemaType` or `Serialisation::S
 - `UntilHandoffOnly` declares that the local deployment never needs deadline storage.
 - `TimedRetention` declares duration/deadline support.
 
-### `Deploy<TEvent,TMaximumInstances,TAdmission,TRetention>` — PUBLIC DECLARATION
+### `Deploy<TEvent,TMaximumInstances,TAdmission,TRetention,TRemoteHandoffCapacity=0>` — PUBLIC DECLARATION
 
-`TEvent` is the retained payload; `TMaximumInstances` is exact simultaneous physical capacity; `TAdmission` is `Queue<N>` or `NewestOnly`; `TRetention` is `UntilHandoffOnly` or `TimedRetention`. Members are `Family`, `Event`, `Admission`, `Retention`, and `MaximumInstances`.
+`TEvent` is the retained payload; `TMaximumInstances` is exact simultaneous physical capacity; `TAdmission` is `Queue<N>` or `NewestOnly`; `TRetention` is `UntilHandoffOnly` or `TimedRetention`; and `TRemoteHandoffCapacity` is the exact 0..255 per-Type ordered outbound capacity. Members additionally expose `RemoteHandoffCapacity`; zero compiles sequencer storage away.
 
 ### `SharedPending<TSlots>` — PUBLIC DECLARATION
 

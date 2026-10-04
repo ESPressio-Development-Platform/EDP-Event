@@ -27,7 +27,23 @@ namespace ESPressio::Event {
         NoCapacity = 1U,
 
         /// The common retention precondition was already expired.
-        Expired = 2U
+        Expired = 2U,
+
+        /// Runtime lifecycle or a stale generation prevented publication.
+        RuntimeUnavailable = 3U
+    };
+
+
+    /// Failure to reserve bounded unpublished ingress or ordered outbound backing.
+    enum class ReservationFailure : std::uint8_t {
+        /// Required physical, logical or sequencer capacity was unavailable.
+        NoCapacity = 0U,
+
+        /// The common retention request had already expired.
+        Expired = 1U,
+
+        /// Runtime lifecycle did not permit a new reservation.
+        RuntimeUnavailable = 2U
     };
 
 
@@ -71,6 +87,44 @@ namespace ESPressio::Event {
 
         /// The remote operation was called exactly once and produced a native result.
         Attempted = 1U
+    };
+
+
+    /// Outcome of one nonblocking ordered outbound handoff commit attempt.
+    enum class OrderedHandoffAttemptState : std::uint8_t {
+        /// The adapter was invoked once and the slot was resolved.
+        Attempted = 0U,
+
+        /// An earlier unresolved handoff opportunity currently owns the head position.
+        EarlierPending = 1U,
+
+        /// Retention expired before this slot could enter the adapter.
+        Expired = 2U,
+
+        /// Reservation generation or Runtime lifecycle was no longer valid.
+        RuntimeUnavailable = 3U
+    };
+
+
+    /// Family-level terminal observation for one exact remote Event recipient.
+    enum class RemoteEventTerminal : std::uint8_t {
+        /// Destination admission committed for this operation.
+        Admitted = 0U,
+
+        /// The same DeliveryIdentifier had already committed destination admission.
+        AlreadyAdmitted = 1U,
+
+        /// Destination admission definitively refused the Event.
+        Refused = 2U,
+
+        /// Retention expired before destination admission committed.
+        ExpiredNotAdmitted = 3U,
+
+        /// Cancellation completed before destination admission committed.
+        CancelledNotAdmitted = 4U,
+
+        /// The source cannot prove whether destination admission committed.
+        OutcomeUncertain = 5U
     };
 
 
@@ -270,8 +324,8 @@ namespace ESPressio::Event {
             /// Result produced by local Event admission.
             TLocalResult _local;
 
-            /// Event-level remote attempt wrapper preserving the provider-defined result when present.
-            RemoteDispatchAttempt<TRemoteResult> _remote;
+            /// Independent remote-domain result or reservation outcome.
+            TRemoteResult _remote;
 
         public:
 
@@ -279,10 +333,10 @@ namespace ESPressio::Event {
 
             /// Creates one combined structural result from independently produced domain outcomes.
             /// @param local Local admission result.
-            /// @param remote Remote attempt/result wrapper.
+            /// @param remote Independent remote-domain result.
             LocalAndRemoteDispatchResult(
                 TLocalResult local,
-                RemoteDispatchAttempt<TRemoteResult> remote
+                TRemoteResult remote
             ) noexcept :
                 _local(Memory::OwnershipTransfer::Move(local)),
                 _remote(Memory::OwnershipTransfer::Move(remote)) {
@@ -318,13 +372,13 @@ namespace ESPressio::Event {
                 return _local;
             }
 
-            /// Returns the mutable remote-attempt wrapper.
-            [[nodiscard]] RemoteDispatchAttempt<TRemoteResult>& Remote() noexcept {
+            /// Returns the mutable remote-domain result.
+            [[nodiscard]] TRemoteResult& Remote() noexcept {
                 return _remote;
             }
 
-            /// Returns the immutable remote-attempt wrapper.
-            [[nodiscard]] const RemoteDispatchAttempt<TRemoteResult>& Remote() const noexcept {
+            /// Returns the immutable remote-domain result.
+            [[nodiscard]] const TRemoteResult& Remote() const noexcept {
                 return _remote;
             }
 

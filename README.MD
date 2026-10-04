@@ -16,7 +16,7 @@ Include:
 
 The core vocabulary is:
 
-- `Deploy<TEvent, MaximumInstances, Admission, Retention>` — declares one locally admissible Event Type.
+- `Deploy<TEvent, MaximumInstances, Admission, Retention, RemoteHandoffs = 0>` — declares local occurrence policy plus exact per-Type ordered outbound capacity.
 - `Queue<DedicatedPending>` — FIFO pending delivery with exact dedicated pending entitlement.
 - `NewestOnly` — retains only the newest still-pending occurrence while preserving active callback borrows.
 - `UntilHandoffOnly` / `TimedRetention` — selects whether local occurrence records can retain deadlines.
@@ -25,7 +25,7 @@ The core vocabulary is:
 - `PlanFor<TTopology>` — resolves the normalized Event family plan from a Primitives topology.
 - `OccurrencePoolSpec<TPlan,TEvent>` — derives the exact EDP-Memory pool required by one deployed Event Type.
 - `Bootstrap<...>` / `Runtime<...>` — compile-time validated construction and bounded runtime operations.
-- `Subscribe`, `Unsubscribe`, `Dispatch`, `Ingress` and `Drain` — runtime Event operations.
+- `Subscribe`, `Unsubscribe`, `Dispatch`, transactional `PrepareIngress`, ordered `PrepareRemoteHandoff` and `Drain` — runtime Event operations.
 - `LocalOnly`, `RemoteOnly`, `LocalAndRemote` — Event-facing re-exports of the canonical `EDP-Primitives` execution-domain scope vocabulary.
 
 ## Documentation
@@ -338,9 +338,11 @@ NewestOnly
 
 ## Transport boundary
 
-Inbound concrete Transport implementations deserialize a valid typed Event and call `Ingress`, which is LocalOnly. Outbound integration supplies a bounded typed callable. Event never sees bytes or defines codec/retry/acknowledgement semantics.
+Inbound adapters reserve a constructed, unpublished destination with `PrepareIngress`, populate it without the Event mutex, then commit against the current subscriber set. Abort, expiry and stale generation release the exact physical and pending entitlement without publication. Integration quiesce cancels publication but defers destination destruction until the decoder-owned reservation commits or aborts.
 
-`RemoteOnly` and `LocalAndRemote` retain the provider-defined remote result inside `RemoteDispatchAttempt<T>`. Event adds only whether the remote operation was `Attempted` or `SkippedExpired`.
+`LocalAndRemote` admits locally first and independently returns an ordered remote reservation. `TryCommit` is nonblocking: an earlier same-Type opportunity yields `EarlierPending`; the head invokes the bounded adapter outside Event synchronization. The sequencer retains only caller-owned typed borrows, never a duplicate payload queue. `RemoteOnly` remains a direct scoped helper and preserves its provider result in `RemoteDispatchAttempt<T>`.
+
+`RemoteEventOperation` exposes frozen recipients and destination-admission terminals only. Event has no Response, listener-completion acknowledgement or aggregate remote success contract.
 
 See [`demos/transport-boundary`](./demos/transport-boundary) for an explicit fake-Transport example without introducing a dependency on a concrete Transport subsystem.
 

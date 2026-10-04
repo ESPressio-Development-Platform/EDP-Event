@@ -121,11 +121,13 @@ namespace ESPressio::Event {
     /// @tparam TMaximumInstances Exact simultaneous live occurrence capacity in the V1 range 1..255.
     /// @tparam TAdmission Queue<N> or NewestOnly admission policy.
     /// @tparam TRetention UntilHandoffOnly or TimedRetention local retention capability.
+    /// @tparam TRemoteHandoffCapacity Exact bounded per-Type ordered outbound handoff capacity.
     template<
         class TEvent,
         std::size_t TMaximumInstances,
         class TAdmission,
-        class TRetention
+        class TRetention,
+        std::size_t TRemoteHandoffCapacity = 0U
     >
     struct Deploy final {
 
@@ -154,6 +156,11 @@ namespace ESPressio::Event {
             "Queue dedicated pending entitlement must not exceed MaximumInstances"
         );
 
+        static_assert(
+            TRemoteHandoffCapacity <= 255U,
+            "Event remote handoff capacity must be in the V1 range 0..255"
+        );
+
         // Family and deployment metadata.
 
         /// Primitive family owning this declaration.
@@ -170,6 +177,9 @@ namespace ESPressio::Event {
 
         /// Exact simultaneous live occurrence capacity.
         static constexpr std::size_t MaximumInstances = TMaximumInstances;
+
+        /// Exact number of concurrent ordered outbound handoff opportunities.
+        static constexpr std::size_t RemoteHandoffCapacity = TRemoteHandoffCapacity;
 
     };
 

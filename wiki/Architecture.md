@@ -22,4 +22,4 @@ Event never creates a worker. Event signals the existing Threading wake path of 
 
 ## Transport boundary
 
-Outbound Transport is an external bounded typed handoff of `const TEvent&`; inbound Transport deserializes before calling Event ingress. Event does not own wire bytes, codec, route, buffering, retry, connection or acknowledgement semantics. Whether a deployment currently uses Transport does not alter the Event Type's intrinsic schema contract.
+Outbound integration reserves a planned same-Type ordering slot and borrows `const TEvent&` only until one bounded adapter call returns. The adapter encodes synchronously outside Event synchronization and may not retain the typed borrow after Mesh admission. Inbound integration first reserves a constructed unpublished occurrence, decodes directly into its exclusive destination outside Event synchronization, then commits against current subscribers. Event does not own wire bytes, codec, route, retry, connection, acknowledgement or a duplicate payload queue. Whether a deployment currently uses Transport does not alter the Event Type's intrinsic schema contract.

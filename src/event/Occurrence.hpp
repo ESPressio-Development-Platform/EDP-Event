@@ -30,6 +30,10 @@ namespace ESPressio::Event {
         struct ListenerIndexSpace final {};
 
 
+        /// Selects default construction of a physical but unpublished inbound occurrence.
+        struct UnpublishedOccurrenceTag final {};
+
+
         /// Smallest unsigned scalar capable of representing a bounded count up to TMaximum.
         /// @tparam TMaximum Maximum representable count derived from immutable topology.
         template<std::size_t TMaximum>
@@ -46,6 +50,30 @@ namespace ESPressio::Event {
                 >
             >
         >;
+
+
+        /// Stateless pending-entitlement storage for non-Queue deployments.
+        template<bool TQueued>
+        struct QueueEntitlementStorage {
+
+            constexpr explicit QueueEntitlementStorage(bool shared) noexcept {
+                static_cast<void>(shared);
+            }
+
+        };
+
+
+        /// Remembers whether one Queue occurrence consumes SharedPending entitlement.
+        template<>
+        struct QueueEntitlementStorage<true> {
+
+            bool Shared{false};
+
+            constexpr explicit QueueEntitlementStorage(bool shared) noexcept :
+                Shared(shared) {
+            }
+
+        };
 
 
         /// Stateless expiry storage used when a deployment cannot use timed retention.
@@ -231,7 +259,8 @@ namespace ESPressio::Event {
             >,
             TPlan::template IsQueue<TEvent>
         >,
-        private Detail::BorrowStorage<TPlan::template EligibleListenerCount<TEvent>> {
+        private Detail::BorrowStorage<TPlan::template EligibleListenerCount<TEvent>>,
+        private Detail::QueueEntitlementStorage<TPlan::template IsQueue<TEvent>> {
 
         private:
 
@@ -274,6 +303,9 @@ namespace ESPressio::Event {
 
             /// Active-borrow storage selected from Listener cardinality.
             using BorrowBase = Detail::BorrowStorage<ListenerCountValue>;
+
+            /// SharedPending entitlement storage selected by admission shape.
+            using QueueEntitlementBase = Detail::QueueEntitlementStorage<TPlan::template IsQueue<TEvent>>;
 
             // Authoritative occurrence payload and pending-recipient state.
 
@@ -331,8 +363,23 @@ namespace ESPressio::Event {
                 ExpiryBase(deadline),
                 QueueBase(),
                 BorrowBase(),
+                QueueEntitlementBase(false),
                 _event(std::forward<TEventArgument>(event)),
                 _pending(pending) {
+            }
+
+            /// Materializes an exclusive inbound destination without publishing Listener visibility.
+            explicit OccurrenceRecord(
+                Detail::UnpublishedOccurrenceTag,
+                MonotonicTimestamp deadline
+            ) noexcept(std::is_nothrow_default_constructible_v<TEvent>)
+            requires std::is_nothrow_default_constructible_v<TEvent> :
+                ExpiryBase(deadline),
+                QueueBase(),
+                BorrowBase(),
+                QueueEntitlementBase(false),
+                _event(),
+                _pending() {
             }
 
             /// Occurrences have stable Memory-pool identity and therefore cannot be copied.
@@ -379,6 +426,33 @@ namespace ESPressio::Event {
                 if constexpr (Queued) {
                     QueueBase::Next = OccurrenceIndex::Invalid();
                 }
+            }
+
+            /// Prepares a populated unpublished occurrence for commit-time visibility.
+            void PublishUnpublished(
+                const ListenerSet& pending,
+                MonotonicTimestamp deadline,
+                bool consumesShared
+            ) noexcept {
+                _pending = pending;
+                ExpiryBase::SetDeadline(deadline);
+
+                if constexpr (Queued) {
+                    QueueBase::Next = OccurrenceIndex::Invalid();
+                    QueueEntitlementBase::Shared = consumesShared;
+                } else {
+                    static_cast<void>(consumesShared);
+                }
+            }
+
+            /// Records the exact Queue entitlement selected for an ordinary admission.
+            void SetQueueEntitlement(bool consumesShared) noexcept requires Queued {
+                QueueEntitlementBase::Shared = consumesShared;
+            }
+
+            /// Reports whether this Queue occurrence consumes SharedPending entitlement.
+            [[nodiscard]] bool ConsumesSharedPending() const noexcept requires Queued {
+                return QueueEntitlementBase::Shared;
             }
 
             // Payload and recipient access.

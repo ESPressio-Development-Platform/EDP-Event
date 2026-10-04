@@ -61,9 +61,14 @@ static_assert(!Event::ExecutionDomainScope<int>);
         /// Mutable canonical time source controlled by the host test.
         mutable std::uint64_t NowNs{100U};
 
+        /// Optional increment applied after each read for deadline-boundary tests.
+        mutable std::uint64_t StepNs{0U};
+
         /// Returns the current test-controlled monotonic timestamp.
         Clock::MonotonicTimestamp Now() const noexcept {
-            return Clock::MonotonicTimestamp::FromNanoseconds(NowNs);
+            const auto observed = NowNs;
+            NowNs += StepNs;
+            return Clock::MonotonicTimestamp::FromNanoseconds(observed);
         }
     };
 
@@ -79,7 +84,7 @@ namespace ESPressio::Bounded {
 namespace Test {
 
     using PrimitiveTopology = Primitives::Topology<
-        Event::Deploy<QueueEvent, 3U, Event::Queue<1U>, Event::TimedRetention>,
+        Event::Deploy<QueueEvent, 3U, Event::Queue<1U>, Event::TimedRetention, 3U>,
         Event::Deploy<LatestEvent, 2U, Event::NewestOnly, Event::UntilHandoffOnly>,
         Event::Observe<ListenerA, QueueEvent>,
         Event::Observe<ListenerB, QueueEvent>,
@@ -364,12 +369,72 @@ namespace Test {
         /// Number of remote handoff invocations observed by the test.
         int Calls{0};
 
+        /// Adapter-observed values proving sequencer entry order.
+        std::array<int, 16U> Values{};
+
+        /// Event mutex evidence proving adapters run outside family synchronization.
+        FakeMutex* Mutex{nullptr};
+
         /// Returns a deterministic provider result derived from the Event payload.
         int operator()(const QueueEvent& event) noexcept {
+            assert(Mutex == nullptr || !Mutex->Held);
+            Values[static_cast<std::size_t>(Calls)] = event.Value;
             ++Calls;
             return event.Value * 100;
         }
     };
+
+
+    struct RemoteEventBinding final {
+        bool* Released;
+
+        [[nodiscard]] std::size_t RecipientCount() const noexcept {
+            return 1U;
+        }
+
+        [[nodiscard]] int Recipient(std::size_t index) const noexcept {
+            return index == 0U ? 17 : -1;
+        }
+
+        [[nodiscard]] Event::RemoteEventTerminal Observe(std::size_t) const noexcept {
+            return Event::RemoteEventTerminal::Admitted;
+        }
+
+        [[nodiscard]] Event::RemoteEventTerminal WaitFor(
+            std::size_t,
+            Event::Duration
+        ) noexcept {
+            return Event::RemoteEventTerminal::Admitted;
+        }
+
+        [[nodiscard]] Event::RemoteEventTerminal WaitUntil(
+            std::size_t,
+            Event::MonotonicTimestamp
+        ) noexcept {
+            return Event::RemoteEventTerminal::Admitted;
+        }
+
+        [[nodiscard]] bool RequestCancellation(std::size_t) noexcept {
+            return false;
+        }
+
+        void Release() noexcept {
+            *Released = true;
+        }
+    };
+
+
+    template<class TOperation>
+    concept HasTakeResponse = requires(TOperation& operation) {
+        operation.TakeResponse(0U);
+    };
+
+    using RemoteEventSurface =
+        Event::RemoteEventOperation<QueueEvent, RemoteEventBinding>;
+
+    static_assert(!std::is_copy_constructible_v<RemoteEventSurface>);
+    static_assert(std::is_nothrow_move_constructible_v<RemoteEventSurface>);
+    static_assert(!HasTakeResponse<RemoteEventSurface>);
 
 } // Test
 
@@ -391,6 +456,24 @@ int main() {
     assert((runtime.template Subscribe<ListenerB, QueueEvent>() == Event::SubscribeResult::Subscribed));
     assert((runtime.template Subscribe<ListenerA, LatestEvent>() == Event::SubscribeResult::Subscribed));
 
+    // Transactional ingress owns physical and pending backing before publication.
+    auto abortedIngressResult = runtime.template PrepareIngress<QueueEvent>();
+    assert(abortedIngressResult.Accepted());
+    auto abortedIngress = std::move(abortedIngressResult).TakeReservation();
+    abortedIngress.Value().Value = 90;
+    abortedIngress.Abort();
+    assert(!abortedIngress.IsValid());
+
+    auto expiredIngressResult = runtime.template PrepareIngress<QueueEvent>(
+        Event::UntilDeadline{Clock::MonotonicTimestamp::FromNanoseconds(101U)}
+    );
+    assert(expiredIngressResult.Accepted());
+    auto expiredIngress = std::move(expiredIngressResult).TakeReservation();
+    expiredIngress.Value().Value = 91;
+    clock.NowNs = 102U;
+    assert(expiredIngress.Commit() == Event::DispatchResult::Expired);
+    clock.NowNs = 100U;
+
     assert(runtime.Dispatch(QueueEvent{1}) == Event::DispatchResult::Accepted);
     assert(runtime.Dispatch(QueueEvent{2}) == Event::DispatchResult::Accepted);
     assert(runtime.Dispatch(QueueEvent{3}) == Event::DispatchResult::Accepted);
@@ -410,6 +493,27 @@ int main() {
     assert(drainedA.Delivered == 1U);
     assert(!drainedA.WorkRemaining);
     assert(listenerA.QueueSum == 6);
+
+    // Ingress snapshots current subscribers only at commit, never at reservation time.
+    auto unpublishedResult = runtime.template PrepareIngress<QueueEvent>();
+    assert(unpublishedResult.Accepted());
+    auto unpublished = std::move(unpublishedResult).TakeReservation();
+    unpublished.Value().Value = 77;
+    assert((runtime.template Unsubscribe<ListenerA, QueueEvent>() == Event::UnsubscribeResult::Unsubscribed));
+    assert((runtime.template Unsubscribe<ListenerB, QueueEvent>() == Event::UnsubscribeResult::Unsubscribed));
+    assert(unpublished.Commit() == Event::DispatchResult::Accepted);
+    assert(runtime.template Drain<ListenerA>(1U).Delivered == 0U);
+    assert(runtime.template Drain<ListenerB>(1U).Delivered == 0U);
+    assert((runtime.template Subscribe<ListenerA, QueueEvent>() == Event::SubscribeResult::Subscribed));
+    assert((runtime.template Subscribe<ListenerB, QueueEvent>() == Event::SubscribeResult::Subscribed));
+
+    auto latestIngressResult = runtime.template PrepareIngress<LatestEvent>();
+    assert(latestIngressResult.Accepted());
+    auto latestIngress = std::move(latestIngressResult).TakeReservation();
+    latestIngress.Value().Value = 15;
+    assert(latestIngress.Commit() == Event::DispatchResult::Accepted);
+    assert(runtime.template Drain<ListenerA>(1U).Delivered == 1U);
+    assert(listenerA.LatestLast == 15);
 
     assert(runtime.Dispatch(LatestEvent{10}) == Event::DispatchResult::Accepted);
     assert(runtime.Dispatch(LatestEvent{20}) == Event::DispatchResult::Accepted);
@@ -463,28 +567,31 @@ int main() {
 
     // Common expiry gate prevents both local admission and remote handoff.
     RemoteOperation remote;
+    remote.Mutex = &mutex;
     QueueEvent remoteEvent{8};
     clock.NowNs = 2000U;
     auto expiredBoth = runtime.Dispatch(
         Event::LocalAndRemote{},
         remoteEvent,
-        Event::UntilDeadline{Clock::MonotonicTimestamp::FromNanoseconds(1999U)},
-        remote
+        Event::UntilDeadline{Clock::MonotonicTimestamp::FromNanoseconds(1999U)}
     );
     assert(expiredBoth.Local() == Event::DispatchResult::Expired);
-    assert(expiredBoth.Remote().WasSkippedExpired());
+    assert(!expiredBoth.Remote().Accepted());
+    assert(expiredBoth.Remote().Failure() == Event::ReservationFailure::Expired);
     assert(remote.Calls == 0);
 
     auto validBoth = runtime.Dispatch(
         Event::LocalAndRemote{},
         remoteEvent,
-        Event::UntilHandoff{},
-        remote
+        Event::UntilHandoff{}
     );
     assert(validBoth.Local() == Event::DispatchResult::Accepted);
-    assert(validBoth.Remote().WasAttempted());
-    assert(validBoth.Remote().GetState() == Event::RemoteDispatchAttemptState::Attempted);
-    const auto* validBothResult = validBoth.Remote().ResultIfPresent();
+    assert(validBoth.Remote().Accepted());
+    auto validReservation =
+        std::move(validBoth.Remote()).TakeReservation();
+    auto validAttempt = validReservation.TryCommit(remote);
+    assert(validAttempt.GetState() == Event::OrderedHandoffAttemptState::Attempted);
+    const auto* validBothResult = validAttempt.ResultIfPresent();
     assert(validBothResult != nullptr);
     assert(*validBothResult == 800);
     assert(remote.Calls == 1);
@@ -517,15 +624,152 @@ int main() {
     auto capacityAndRemote = runtime.Dispatch(
         Event::LocalAndRemote{},
         overflowEvent,
-        Event::UntilHandoff{},
-        remote
+        Event::UntilHandoff{}
     );
     assert(capacityAndRemote.Local() == Event::DispatchResult::NoCapacity);
-    assert(capacityAndRemote.Remote().WasAttempted());
-    const auto* capacityRemoteResult = capacityAndRemote.Remote().ResultIfPresent();
+    assert(capacityAndRemote.Remote().Accepted());
+    auto capacityReservation =
+        std::move(capacityAndRemote.Remote()).TakeReservation();
+    auto capacityAttempt = capacityReservation.TryCommit(remote);
+    assert(capacityAttempt.GetState() == Event::OrderedHandoffAttemptState::Attempted);
+    const auto* capacityRemoteResult = capacityAttempt.ResultIfPresent();
     assert(capacityRemoteResult != nullptr);
     assert(*capacityRemoteResult == 900);
     assert(remote.Calls == 3);
+
+    // A common deadline may expire after local admission but before remote reservation.
+    clock.NowNs = 3000U;
+    clock.StepNs = 1U;
+    QueueEvent crossedDeadline{10};
+    auto localThenExpiredRemote = runtime.Dispatch(
+        Event::LocalAndRemote{},
+        crossedDeadline,
+        Event::UntilDeadline{Clock::MonotonicTimestamp::FromNanoseconds(3002U)}
+    );
+    clock.StepNs = 0U;
+    assert(localThenExpiredRemote.Local() == Event::DispatchResult::NoCapacity);
+    assert(!localThenExpiredRemote.Remote().Accepted());
+    assert(
+        localThenExpiredRemote.Remote().Failure() ==
+        Event::ReservationFailure::Expired
+    );
+    assert(remote.Calls == 3);
+
+    // Later slots fail fast until the earlier opportunity is resolved.
+    QueueEvent orderedFirst{31};
+    QueueEvent orderedSecond{32};
+    auto orderedFirstResult = runtime.PrepareRemoteHandoff(orderedFirst);
+    auto orderedSecondResult = runtime.PrepareRemoteHandoff(orderedSecond);
+    assert(orderedFirstResult.Accepted());
+    assert(orderedSecondResult.Accepted());
+    auto orderedFirstReservation =
+        std::move(orderedFirstResult).TakeReservation();
+    auto orderedSecondReservation =
+        std::move(orderedSecondResult).TakeReservation();
+
+    auto blockedSecond = orderedSecondReservation.TryCommit(remote);
+    assert(blockedSecond.GetState() == Event::OrderedHandoffAttemptState::EarlierPending);
+    assert(orderedSecondReservation.IsValid());
+    assert(remote.Calls == 3);
+
+    auto committedFirst = orderedFirstReservation.TryCommit(remote);
+    assert(committedFirst.GetState() == Event::OrderedHandoffAttemptState::Attempted);
+    auto committedSecond = orderedSecondReservation.TryCommit(remote);
+    assert(committedSecond.GetState() == Event::OrderedHandoffAttemptState::Attempted);
+    assert(remote.Values[3U] == 31);
+    assert(remote.Values[4U] == 32);
+    assert(remote.Calls == 5);
+
+    // Aborting the head is a terminal skip and immediately unblocks its successor.
+    QueueEvent skippedHead{33};
+    QueueEvent afterSkip{34};
+    auto skippedHeadResult = runtime.PrepareRemoteHandoff(skippedHead);
+    auto afterSkipResult = runtime.PrepareRemoteHandoff(afterSkip);
+    assert(skippedHeadResult.Accepted());
+    assert(afterSkipResult.Accepted());
+    auto skippedHeadReservation =
+        std::move(skippedHeadResult).TakeReservation();
+    auto afterSkipReservation =
+        std::move(afterSkipResult).TakeReservation();
+    skippedHeadReservation.Abort();
+    auto afterSkipAttempt = afterSkipReservation.TryCommit(remote);
+    assert(afterSkipAttempt.GetState() == Event::OrderedHandoffAttemptState::Attempted);
+    assert(remote.Values[5U] == 34);
+    assert(remote.Calls == 6);
+
+    // Capacity is exact and plans with zero slots reject without retaining a borrow.
+    QueueEvent heldA{41};
+    QueueEvent heldB{42};
+    QueueEvent heldC{43};
+    QueueEvent refused{44};
+    auto heldAResult = runtime.PrepareRemoteHandoff(heldA);
+    auto heldBResult = runtime.PrepareRemoteHandoff(heldB);
+    auto heldCResult = runtime.PrepareRemoteHandoff(heldC);
+    auto refusedResult = runtime.PrepareRemoteHandoff(refused);
+    assert(heldAResult.Accepted());
+    assert(heldBResult.Accepted());
+    assert(heldCResult.Accepted());
+    assert(!refusedResult.Accepted());
+    assert(refusedResult.Failure() == Event::ReservationFailure::NoCapacity);
+
+    auto heldAReservation = std::move(heldAResult).TakeReservation();
+    auto heldBReservation = std::move(heldBResult).TakeReservation();
+    auto heldCReservation = std::move(heldCResult).TakeReservation();
+    heldAReservation.Abort();
+    heldBReservation.Abort();
+    heldCReservation.Abort();
+
+    LatestEvent noRemoteCapacity{55};
+    auto noRemoteResult = runtime.PrepareRemoteHandoff(noRemoteCapacity);
+    assert(!noRemoteResult.Accepted());
+    assert(noRemoteResult.Failure() == Event::ReservationFailure::NoCapacity);
+
+    // Remote Event semantics expose destination admission only, never a Response.
+    bool remoteEventReleased = false;
+    {
+        RemoteEventSurface operation(RemoteEventBinding{&remoteEventReleased});
+        assert(operation.RecipientCount() == 1U);
+        assert(operation.Recipient(0U) == 17);
+        assert(operation.Observe(0U) == Event::RemoteEventTerminal::Admitted);
+        assert(
+            operation.WaitFor(0U, Event::Duration::FromNanoseconds(1)) ==
+            Event::RemoteEventTerminal::Admitted
+        );
+        assert(!operation.RequestCancellation(0U));
+        RemoteEventSurface moved(std::move(operation));
+        assert(!operation.IsValid());
+        assert(moved.IsValid());
+    }
+    assert(remoteEventReleased);
+
+    // Integration quiesce generation-safely cancels unpublished and ordered reservations.
+    QueueEvent quiescedRemoteEvent{61};
+    auto quiescedRemoteResult = runtime.PrepareRemoteHandoff(quiescedRemoteEvent);
+    auto quiescedIngressResult = runtime.template PrepareIngress<LatestEvent>();
+    assert(quiescedRemoteResult.Accepted());
+    assert(quiescedIngressResult.Accepted());
+    auto quiescedRemote =
+        std::move(quiescedRemoteResult).TakeReservation();
+    auto quiescedIngress =
+        std::move(quiescedIngressResult).TakeReservation();
+    quiescedIngress.Value().Value = 62;
+
+    runtime.BeginIntegrationQuiesce();
+    // Quiesce cannot destroy a destination while its decoder owns the
+    // unpublished reservation outside the Event mutex.
+    assert(!runtime.IsIntegrationQuiescent());
+    assert(quiescedIngress.Commit() == Event::DispatchResult::RuntimeUnavailable);
+    assert(runtime.IsIntegrationQuiescent());
+    auto quiescedAttempt = quiescedRemote.TryCommit(remote);
+    assert(quiescedAttempt.GetState() == Event::OrderedHandoffAttemptState::RuntimeUnavailable);
+    assert(remote.Calls == 6);
+
+    auto closedIngress = runtime.template PrepareIngress<LatestEvent>();
+    assert(!closedIngress.Accepted());
+    assert(closedIngress.Failure() == Event::ReservationFailure::RuntimeUnavailable);
+    auto closedRemote = runtime.PrepareRemoteHandoff(quiescedRemoteEvent);
+    assert(!closedRemote.Accepted());
+    assert(closedRemote.Failure() == Event::ReservationFailure::RuntimeUnavailable);
 
     assert(!mutex.Held);
     return 0;

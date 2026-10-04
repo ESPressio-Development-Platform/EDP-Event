@@ -26,6 +26,7 @@ namespace LayoutTest {
     static_assert(std::is_empty_v<Event::Detail::ExpiryStorage<false>>);
     static_assert(std::is_empty_v<Event::Detail::BorrowStorage<0U>>);
     static_assert(std::is_empty_v<Event::Detail::QueueLinkStorage<typename BareRecord::OccurrenceIndex, false>>);
+    static_assert(std::is_empty_v<Event::Detail::OutboundSequencer<BarePlan, BareEvent>>);
     static_assert(sizeof(BareRecord) == sizeof(BareEvent),
         "Untimed zero-listener NewestOnly occurrence must retain no bookkeeping bytes beyond the Event payload");
 

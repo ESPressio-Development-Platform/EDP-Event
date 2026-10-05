@@ -1,8 +1,18 @@
 #pragma once
 
+#include <cstdint>
 #include <ESPressio_Primitives.hpp>
 
 namespace ESPressio::Event {
+
+    /// Version of the Event-family Mesh wire operation vocabulary.
+    inline static constexpr std::uint16_t WireOperationVersion = 1U;
+
+    /// Stable Event-family semantic operations carried by Mesh.
+    enum class WireOperation : std::uint16_t {
+        Occurrence = 1U
+    };
+
 
     /// Event-family planner defined by Planner.hpp.
     struct Planner;
